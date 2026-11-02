@@ -1,0 +1,24 @@
+{
+  "name": "vps-panel",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Web control panel for a VPS: system metrics, systemd services, Docker and Kafka",
+  "workspaces": [
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "setup": "npm run setup -w server --",
+    "dev": "concurrently -n server,client -c blue,green \"npm run dev -w server\" \"npm run dev -w client\"",
+    "build": "npm run build -w client && npm run build -w server",
+    "start": "npm run start -w server",
+    "typecheck": "npm run typecheck -w server && npm run typecheck -w client",
+    "passwd": "npm run passwd -w server"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

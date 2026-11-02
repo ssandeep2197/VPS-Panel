@@ -1,0 +1,31 @@
+# Apply only after the DNS A record for the host below points to the server,
+# otherwise the Let's Encrypt certificate request fails.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: vps-panel
+  namespace: default
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    # Keep quiet log streams (WebSocket) and long image pulls from being cut off
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: panel.helloworlds.co.in
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: vps-panel
+                port:
+                  number: 80
+  tls:
+    - hosts:
+        - panel.helloworlds.co.in
+      secretName: vps-panel-tls
