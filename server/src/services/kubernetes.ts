@@ -113,6 +113,7 @@ interface RawWorkload {
 
 interface RawIngress {
   metadata: Meta;
+  status?: { loadBalancer?: { ingress?: Array<{ ip?: string; hostname?: string }> } };
   spec: {
     ingressClassName?: string;
     tls?: Array<{ hosts?: string[]; secretName?: string }>;
@@ -372,9 +373,48 @@ export async function listIngresses() {
             }
           : null,
         created: i.metadata.creationTimestamp,
+        /** Public address the ingress controller reports (the server's IP). */
+        address: i.status?.loadBalancer?.ingress?.[0]?.ip ?? i.status?.loadBalancer?.ingress?.[0]?.hostname ?? null,
       };
     })
     .sort((a, b) => a.namespace.localeCompare(b.namespace) || a.name.localeCompare(b.name));
+}
+
+// ---------- Endpoints ----------
+
+interface RawEndpoints {
+  metadata: Meta;
+  subsets?: Array<{
+    addresses?: Array<{ ip: string; targetRef?: { kind: string; name: string } }>;
+    notReadyAddresses?: Array<{ ip: string; targetRef?: { kind: string; name: string } }>;
+    ports?: Array<{ name?: string; port: number }>;
+  }>;
+}
+
+export interface ServiceEndpoints {
+  namespace: string;
+  name: string;
+  ready: Array<{ ip: string; port: number; pod: string | null }>;
+  notReady: Array<{ ip: string; pod: string | null }>;
+}
+
+/** Ready and not-ready addresses behind every Service (pods, or static addresses for selector-less services). */
+export async function listEndpoints(): Promise<ServiceEndpoints[]> {
+  const items = await getJson<RawEndpoints>('endpoints');
+  return items.map((e) => {
+    const ready: ServiceEndpoints['ready'] = [];
+    const notReady: ServiceEndpoints['notReady'] = [];
+    for (const subset of e.subsets ?? []) {
+      const ports = subset.ports?.length ? subset.ports : [{ port: 0 }];
+      for (const a of subset.addresses ?? []) {
+        for (const p of ports) ready.push({ ip: a.ip, port: p.port, pod: a.targetRef?.kind === 'Pod' ? a.targetRef.name : null });
+      }
+      for (const a of subset.notReadyAddresses ?? []) {
+        notReady.push({ ip: a.ip, pod: a.targetRef?.kind === 'Pod' ? a.targetRef.name : null });
+      }
+    }
+    return { namespace: e.metadata.namespace ?? 'default', name: e.metadata.name, ready, notReady };
+  });
 }
 
 // ---------- Events ----------

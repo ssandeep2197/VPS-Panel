@@ -2,6 +2,7 @@ import http from 'http';
 import { createApp } from './app';
 import { assertConfig, config } from './config';
 import { disconnectKafka } from './services/kafka';
+import { startSiteMonitor } from './services/sites';
 import { startMetricsSampler } from './services/system';
 import { attachWebSocket } from './ws';
 
@@ -10,6 +11,7 @@ assertConfig();
 const server = http.createServer(createApp());
 const wss = attachWebSocket(server);
 startMetricsSampler();
+startSiteMonitor();
 
 server.listen(config.port, config.host, () => {
   console.log(`VPS panel listening on http://${config.host}:${config.port}`);

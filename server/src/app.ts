@@ -8,6 +8,7 @@ import { dockerRouter } from './routes/docker';
 import { kafkaRouter } from './routes/kafka';
 import { kubernetesRouter } from './routes/kubernetes';
 import { servicesRouter } from './routes/services';
+import { sitesRouter } from './routes/sites';
 import { systemRouter } from './routes/system';
 import { isConfigured as kafkaConfigured } from './services/kafka';
 import { isAvailable as kubernetesAvailable } from './services/kubernetes';
@@ -21,7 +22,11 @@ export function createApp() {
   app.use(
     helmet({
       contentSecurityPolicy: {
-        directives: { 'connect-src': ["'self'", 'ws:', 'wss:'] },
+        directives: {
+          'connect-src': ["'self'", 'ws:', 'wss:'],
+          // Site screenshots are fetched with the bearer token and shown from blob: URLs
+          'img-src': ["'self'", 'data:', 'blob:'],
+        },
       },
     }),
   );
@@ -51,6 +56,7 @@ export function createApp() {
   api.use('/docker', dockerRouter);
   api.use('/kafka', kafkaRouter);
   api.use('/kubernetes', kubernetesRouter);
+  api.use('/sites', sitesRouter);
   app.use('/api', api);
 
   app.use('/api', (_req, _res, next) => next(new HttpError(404, 'Not found')));

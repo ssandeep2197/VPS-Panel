@@ -5,6 +5,7 @@ A web control panel for a single Linux server. It runs **on the server it manage
 | Page | What you can do |
 | --- | --- |
 | Dashboard | Live CPU, memory, swap, load, network and disk usage |
+| Sites | Health of every hostname the server fronts: DNS, certificate, HTTPS response, backend pods or container, a screenshot thumbnail and a plain-language reason when something is down |
 | Services | List systemd units, start / stop / restart, enable / disable at boot, live journal logs |
 | Docker | Containers (start, stop, restart, pause, remove, live logs, details, interactive terminal), images (pull, remove), volumes, networks |
 | Kubernetes | Apps (restart, scale), pods (CPU, memory, live logs, delete), ingresses with certificate status, warnings |
@@ -163,6 +164,8 @@ All settings live in `server/.env`; see `server/.env.example` for the full list.
 | `KUBECTL_BIN` | Path to `kubectl` (default `kubectl`); the Kubernetes page is hidden when it is missing |
 | `PROTECTED_NAMESPACES` | Namespaces whose workloads cannot be scaled from the UI (default `kube-system,ingress-nginx,cert-manager`) |
 | `KAFKA_BROKERS` | Comma separated brokers; SASL/SSL options are in `.env.example` |
+| `SITES` | Extra hostnames to check that have no ingress rule in the cluster |
+| `THUMBNAILS`, `THUMBNAIL_IMAGE` | Screenshots use headless Chromium in a throwaway Docker container (`zenika/alpine-chrome`, pulled on first use); set `THUMBNAILS=false` to disable |
 
 To change the password, run `npm run passwd` on the server and restart the panel. It asks for the
 password at a hidden prompt and changes nothing else. From another machine:
@@ -173,6 +176,15 @@ ssh -t <server> "cd /opt/vps-panel && npm run passwd && systemctl restart vps-pa
 
 Avoid passing a password on a command line through SSH: the local shell rewrites characters such as
 `$`, `!` and backticks inside double quotes, so the stored password ends up different from what you typed.
+
+## Sites page
+
+Hostnames are discovered from the cluster's ingress rules every minute (plus `SITES` from `.env`) and checked
+from the server itself: DNS record versus the server's IP, the certificate actually served (Let's Encrypt, the
+ingress placeholder, expiry), the HTTPS response and time, and what is behind the ingress (pods ready, or for
+selector-less services the Docker container on the host bridge). Each failing step becomes a sentence in the
+site's "problems" list, so the page says *why* a site is down, not just that it is. Screenshots are refreshed
+every 30 minutes, a few per cycle, and stored in `server/data/thumbnails`.
 
 ## Security notes
 

@@ -47,6 +47,16 @@ export const config = {
     saslPassword: process.env.KAFKA_SASL_PASSWORD || '',
   },
 
+  sites: {
+    /** Extra hostnames to monitor that have no ingress in the cluster. */
+    extra: list(process.env.SITES),
+    /** The server's public IP; detected from the ingress controller when empty. */
+    publicIp: process.env.PUBLIC_IP || '',
+    thumbnails: bool(process.env.THUMBNAILS, true),
+    thumbnailImage: process.env.THUMBNAIL_IMAGE || 'zenika/alpine-chrome:latest',
+    thumbnailBin: process.env.THUMBNAIL_BIN || 'chromium-browser',
+  },
+
   dataDir: process.env.DATA_DIR || path.join(serverRoot, 'data'),
   clientDist: path.resolve(serverRoot, '../client/dist'),
 };

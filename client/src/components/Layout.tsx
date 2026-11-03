@@ -6,6 +6,7 @@ import {
   Cpu,
   Globe,
   LayoutDashboard,
+  Layers,
   LogOut,
   Moon,
   Server,
@@ -21,6 +22,7 @@ import { Button } from './ui';
 
 const NAV = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
+  { to: '/sites', label: 'Sites', icon: Layers },
   { to: '/services', label: 'Services', icon: Cog },
   { to: '/docker', label: 'Docker', icon: Boxes },
   { to: '/kubernetes', label: 'Kubernetes', icon: Ship },

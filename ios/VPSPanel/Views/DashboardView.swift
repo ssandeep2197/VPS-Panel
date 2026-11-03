@@ -4,6 +4,7 @@ import SwiftUI
 struct DashboardView: View {
     @Environment(Session.self) private var session
     @State private var overview = Loader<Overview>()
+    @State private var sites = Loader<SitesReport>()
     @State private var samples: [MetricSample] = []
     @State private var stream: StreamClient?
 
@@ -14,6 +15,7 @@ struct DashboardView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     hostCard
+                    sitesCard
                     liveTiles
                     charts
                     disks
@@ -29,6 +31,7 @@ struct DashboardView: View {
             }
             .refreshable { await overview.load { try await session.api.overview() } }
             .task { await overview.poll(every: 60) { try await session.api.overview() } }
+            .task { await sites.poll(every: 30) { try await session.api.sites() } }
             .onAppear(perform: startStream)
             .onDisappear { stream?.stop(); stream = nil }
         }
@@ -79,6 +82,34 @@ struct DashboardView: View {
             Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.red).font(.footnote)
         } else {
             ProgressView().frame(maxWidth: .infinity)
+        }
+    }
+
+    @ViewBuilder private var sitesCard: some View {
+        if let r = sites.value {
+            let down = r.sites.filter { $0.status == "down" }
+            let warn = r.sites.filter { $0.status == "degraded" }
+            NavigationLink { SitesView() } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "globe").foregroundStyle(.tint)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("\(r.sites.count - down.count) of \(r.sites.count) sites working").font(.subheadline.weight(.semibold))
+                        if !down.isEmpty {
+                            Text(down.map(\.host).joined(separator: ", ")).font(.caption).foregroundStyle(.red).lineLimit(2)
+                        } else if !warn.isEmpty {
+                            Text("\(warn.count) with warnings").font(.caption).foregroundStyle(.orange)
+                        } else {
+                            Text("All sites up").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    Spacer()
+                    StatusDot(tone: down.isEmpty ? (warn.isEmpty ? .ok : .warning) : .critical)
+                    Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                }
+                .padding(12)
+                .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
+            }
+            .buttonStyle(.plain)
         }
     }
 

@@ -11,6 +11,7 @@ import { LoginPage } from './pages/Login';
 import { ProcessesPage } from './pages/Processes';
 import { RequestsPage } from './pages/Requests';
 import { ServicesPage } from './pages/Services';
+import { SitesPage } from './pages/Sites';
 
 export function App() {
   const { username, ready } = useAuth();
@@ -22,6 +23,7 @@ export function App() {
     <Routes>
       <Route element={<Layout />}>
         <Route index element={<DashboardPage />} />
+        <Route path="sites" element={<SitesPage />} />
         <Route path="services" element={<ServicesPage />} />
         <Route path="docker" element={<DockerPage />} />
         <Route path="kubernetes" element={<KubernetesPage />} />

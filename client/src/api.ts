@@ -382,6 +382,68 @@ export interface AccessEntry {
   upstreamStatus: number | null;
 }
 
+export type SiteStatus = 'ok' | 'degraded' | 'down' | 'unknown';
+
+export interface SiteBackend {
+  service: string;
+  kind: 'pods' | 'external' | 'missing';
+  ready: number;
+  total: number;
+  addresses: string[];
+  reachable: boolean | null;
+  pods: Array<{ name: string; status: string; restarts: number; image: string }>;
+  container: { name: string; state: string; status: string; image: string } | null;
+}
+
+export interface SiteCheck {
+  host: string;
+  url: string;
+  name: string;
+  namespace: string | null;
+  ingress: string | null;
+  status: SiteStatus;
+  problems: string[];
+  notes: string[];
+  dns: { addresses: string[]; pointsHere: boolean | null };
+  tls: {
+    valid: boolean;
+    placeholder: boolean;
+    issuer: string | null;
+    subject: string | null;
+    expires: string | null;
+    daysLeft: number | null;
+    error: string | null;
+  };
+  certificate: { ready: boolean; message: string; expires: string | null } | null;
+  http: {
+    status: number | null;
+    latencyMs: number | null;
+    title: string | null;
+    finalUrl: string | null;
+    server: string | null;
+    error: string | null;
+  };
+  backends: SiteBackend[];
+  thumbnailAt: string | null;
+  checkedAt: string;
+}
+
+export interface SitesReport {
+  checkedAt: string | null;
+  publicIp: string | null;
+  thumbnails: boolean;
+  discovery: string | null;
+  sites: SiteCheck[];
+}
+
+/** Fetches a protected binary resource (the <img> tag cannot send the bearer token). */
+export async function apiBlob(path: string): Promise<Blob> {
+  const token = getToken();
+  const res = await fetch(`/api${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  if (!res.ok) throw new ApiError(res.status, `Request failed (${res.status})`);
+  return res.blob();
+}
+
 // ---------- Endpoints ----------
 
 export const endpoints = {
@@ -432,6 +494,12 @@ export const endpoints = {
     api<{ ok: true }>(`/kubernetes/pods/${enc(namespace)}/${enc(name)}`, { method: 'DELETE' }),
   k8sIngresses: () => api<K8sIngress[]>('/kubernetes/ingresses'),
   k8sEvents: () => api<K8sEvent[]>('/kubernetes/events'),
+
+  sites: () => api<SitesReport>('/sites'),
+  refreshSites: () => api<SitesReport>('/sites/refresh', { method: 'POST' }),
+  siteThumbnail: (host: string) => apiBlob(`/sites/${enc(host)}/thumbnail`),
+  captureSiteThumbnail: (host: string) =>
+    api<{ ok: true; thumbnailAt: string }>(`/sites/${enc(host)}/thumbnail`, { method: 'POST' }),
 
   kafkaCluster: () => api<KafkaCluster>('/kafka/cluster'),
   kafkaTopics: () => api<KafkaTopic[]>('/kafka/topics'),

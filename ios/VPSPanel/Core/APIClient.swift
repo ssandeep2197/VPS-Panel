@@ -148,6 +148,22 @@ extension APIClient {
     func k8sIngresses() async throws -> [K8sIngress] { try await get("/kubernetes/ingresses") }
     func k8sEvents() async throws -> [K8sEvent] { try await get("/kubernetes/events") }
 
+    func sites() async throws -> SitesReport { try await get("/sites") }
+    func refreshSites() async throws -> SitesReport { try await request("POST", "/sites/refresh", body: nil, timeout: 90) }
+    func captureSiteThumbnail(_ host: String) async throws {
+        struct R: Decodable { let ok: Bool }
+        let _: R = try await request("POST", "/sites/\(enc(host))/thumbnail", body: nil, timeout: 120)
+    }
+    /// Raw bytes of a protected resource (used for screenshots, which need the bearer token).
+    func bytes(_ path: String) async throws -> Data {
+        var req = URLRequest(url: url(forAPI: path))
+        if let token { req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        let (data, response) = try await session.data(for: req)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(status) else { throw APIError(status: status, message: "Request failed (\(status))", code: nil) }
+        return data
+    }
+
     func kafkaCluster() async throws -> KafkaCluster { try await get("/kafka/cluster") }
     func kafkaTopics() async throws -> [KafkaTopic] { try await get("/kafka/topics") }
     func kafkaTopic(_ name: String) async throws -> KafkaTopicDetail { try await get("/kafka/topics/\(enc(name))") }

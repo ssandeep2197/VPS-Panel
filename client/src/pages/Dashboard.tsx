@@ -81,6 +81,9 @@ export function DashboardPage() {
   const overview = useQuery({ queryKey: ['overview'], queryFn: endpoints.overview, refetchInterval: 60_000 });
   const docker = useQuery({ queryKey: ['docker', 'info'], queryFn: endpoints.dockerInfo, refetchInterval: 15_000 });
   const caps = useQuery({ queryKey: ['capabilities'], queryFn: endpoints.capabilities, staleTime: Infinity });
+  const sites = useQuery({ queryKey: ['sites'], queryFn: endpoints.sites, refetchInterval: 30_000 });
+  const sitesDown = sites.data?.sites.filter((s) => s.status === 'down') ?? [];
+  const sitesWarn = sites.data?.sites.filter((s) => s.status === 'degraded') ?? [];
   const services = useQuery({
     queryKey: ['services'],
     queryFn: endpoints.services,
@@ -149,6 +152,20 @@ export function DashboardPage() {
       </div>
 
       <div className="grid summaries">
+        <SummaryCard title="Sites" to="/sites" query={sites}>
+          <span className="tile-value">
+            {formatNumber(sites.data?.sites.filter((s) => s.status === 'ok').length ?? 0)}
+            <span className="tile-unit"> of {sites.data?.sites.length ?? 0} working</span>
+          </span>
+          {sitesDown.length ? (
+            <Badge tone="critical">{sitesDown.length} not working</Badge>
+          ) : sitesWarn.length ? (
+            <Badge tone="warning">{sitesWarn.length} with warnings</Badge>
+          ) : (
+            <Badge tone="good">All sites up</Badge>
+          )}
+          {sitesDown.length > 0 && <span className="muted small">{sitesDown.map((s) => s.host).join(', ')}</span>}
+        </SummaryCard>
         <SummaryCard
           title="Services"
           to="/services"

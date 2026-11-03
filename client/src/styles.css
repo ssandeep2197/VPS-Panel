@@ -1124,3 +1124,131 @@ tr.clickable {
 .terminal-box .xterm {
   height: 100%;
 }
+
+/* ---------- Sites ---------- */
+
+.grid.sites {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
+}
+.site-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  min-width: 0;
+}
+.site-card.site-down {
+  border-color: color-mix(in srgb, var(--critical, #e5484d) 55%, var(--border));
+}
+.site-thumb {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  background: var(--surface-2, rgba(127, 127, 127, 0.08));
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-2);
+  overflow: hidden;
+}
+.site-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top;
+  display: block;
+}
+.site-thumb .site-initial {
+  font-size: 44px;
+  font-weight: 600;
+  opacity: 0.35;
+}
+.site-thumb .site-thumb-badge {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+}
+.site-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+}
+.site-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.site-title strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.site-host {
+  color: var(--text-2);
+  font-size: 13px;
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.site-host:hover {
+  text-decoration: underline;
+}
+.site-facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  font-size: 13px;
+}
+.site-facts dt {
+  color: var(--text-2);
+}
+.site-facts dd {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.site-problems {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--critical, #e5484d) 10%, transparent);
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+.site-problems li {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+.site-problems svg {
+  flex: none;
+  margin-top: 2px;
+}
+.site-notes {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+  color: var(--text-2);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.site-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 4px;
+}

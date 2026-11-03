@@ -442,3 +442,81 @@ struct AccessEntry: Decodable, Identifiable {
     let upstream: String
     let upstreamStatus: Int?
 }
+
+// MARK: - Sites
+
+struct SiteBackend: Decodable, Identifiable {
+    var id: String { service }
+    let service: String
+    let kind: String
+    let ready: Int
+    let total: Int
+    let addresses: [String]
+    let reachable: Bool?
+    let pods: [SitePod]
+    let container: SiteContainer?
+
+    struct SitePod: Decodable, Identifiable {
+        var id: String { name }
+        let name: String
+        let status: String
+        let restarts: Int
+        let image: String
+    }
+    struct SiteContainer: Decodable {
+        let name: String
+        let state: String
+        let status: String
+        let image: String
+    }
+}
+
+struct SiteCheck: Decodable, Identifiable, Hashable {
+    var id: String { host }
+    let host: String
+    let url: String
+    let name: String
+    let namespace: String?
+    let ingress: String?
+    let status: String
+    let problems: [String]
+    let notes: [String]
+    let dns: DNS
+    let tls: TLS
+    let certificate: Certificate?
+    let http: HTTP
+    let backends: [SiteBackend]
+    let thumbnailAt: String?
+    let checkedAt: String
+
+    struct DNS: Decodable { let addresses: [String]; let pointsHere: Bool? }
+    struct TLS: Decodable {
+        let valid: Bool
+        let placeholder: Bool
+        let issuer: String?
+        let subject: String?
+        let expires: String?
+        let daysLeft: Int?
+        let error: String?
+    }
+    struct Certificate: Decodable { let ready: Bool; let message: String; let expires: String? }
+    struct HTTP: Decodable {
+        let status: Int?
+        let latencyMs: Double?
+        let title: String?
+        let finalUrl: String?
+        let server: String?
+        let error: String?
+    }
+
+    static func == (a: SiteCheck, b: SiteCheck) -> Bool { a.host == b.host && a.checkedAt == b.checkedAt && a.thumbnailAt == b.thumbnailAt }
+    func hash(into hasher: inout Hasher) { hasher.combine(host) }
+}
+
+struct SitesReport: Decodable {
+    let checkedAt: String?
+    let publicIp: String?
+    let thumbnails: Bool
+    let discovery: String?
+    let sites: [SiteCheck]
+}

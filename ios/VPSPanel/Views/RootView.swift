@@ -61,6 +61,7 @@ private struct MoreView: View {
         NavigationStack {
             List {
                 Section {
+                    NavigationLink { SitesView() } label: { Label("Sites", systemImage: "globe") }
                     if (caps?.systemd ?? true) && (caps?.kafka ?? true) {
                         NavigationLink { ServicesView(embedded: true) } label: { Label("Services", systemImage: "gearshape.2") }
                     }
