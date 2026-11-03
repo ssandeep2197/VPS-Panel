@@ -163,6 +163,7 @@ All settings live in `server/.env`; see `server/.env.example` for the full list.
 | `DOCKER_SOCKET` | Override the Docker socket path |
 | `KUBECTL_BIN` | Path to `kubectl` (default `kubectl`); the Kubernetes page is hidden when it is missing |
 | `PROTECTED_NAMESPACES` | Namespaces whose workloads cannot be scaled from the UI (default `kube-system,ingress-nginx,cert-manager`) |
+| `TMS_SSO`, `TMS_SSO_HOST`, `TMS_API_URL` | Sign in with TMS accounts (see below) |
 | `KAFKA_BROKERS` | Comma separated brokers; SASL/SSL options are in `.env.example` |
 | `SITES` | Extra hostnames to check that have no ingress rule in the cluster |
 | `THUMBNAILS`, `THUMBNAIL_IMAGE` | Screenshots use headless Chromium in a throwaway Docker container (`zenika/alpine-chrome`, pulled on first use); set `THUMBNAILS=false` to disable |
@@ -185,6 +186,23 @@ ingress placeholder, expiry), the HTTPS response and time, and what is behind th
 selector-less services the Docker container on the host bridge). Each failing step becomes a sentence in the
 site's "problems" list, so the page says *why* a site is down, not just that it is. Screenshots are refreshed
 every 30 minutes, a few per cycle, and stored in `server/data/thumbnails`.
+
+## Sign-in with TMS (single sign-on)
+
+With `TMS_SSO=true` the panel is one of the TMS platform's *gated hosts* (service `panel`), exactly like the TMS
+developer portal: people sign in with their TMS email and password, TMS sets an 8-hour `tms_sso` cookie for the
+panel's hostname, and the panel asks the TMS API (`GET /platform/sso/check`) on every request whether the cookie is
+still valid and the account still has the grant. Who may use the panel is managed in the TMS admin portal under
+**Access** (owners in `PLATFORM_ADMIN_EMAILS` always may); removing a grant ends access within 30 seconds.
+
+- `/platform/sso/*` on the panel's host is passed through to the TMS API, so the admin portal's hand-over link
+  (`/platform/sso/consume`) and the TMS sign-in form work on the panel too. The panel's own login screens post JSON
+  to `/platform/sso/login` and get the cookie back; the iPhone app stores it in the Keychain and sends it as a
+  `Cookie` header (also on the WebSocket).
+- The TMS API is found through Docker (the running `api` container of the `tms` compose project), or set
+  `TMS_API_URL`. TMS must list the panel's hostname: `SSO_SERVICE_HOSTS=docs=docs.example.com;panel=panel.example.com`.
+- The panel's own `ADMIN_USERNAME` / `ADMIN_PASSWORD_HASH` login stays available behind "Use the panel's own admin
+  password" as a break-glass path for when TMS itself is down, since the panel is the tool to fix it with.
 
 ## Security notes
 

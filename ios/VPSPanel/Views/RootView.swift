@@ -101,6 +101,7 @@ struct SettingsView: View {
             Section("Connection") {
                 KeyValue("Server", session.serverURL, mono: true)
                 KeyValue("User", session.username)
+                KeyValue("Signed in with", session.method == .tms ? "TMS account" : "Panel password")
                 if let caps = session.capabilities {
                     KeyValue("Platform", caps.platform)
                     KeyValue("systemd", caps.systemd ? "available" : "not available")

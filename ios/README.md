@@ -49,8 +49,8 @@ production password. Start the server with throwaway credentials (set `ADMIN_PAS
 `PORT=4601`, `SITES=...` in the environment), write a JWT signed with that secret to `<dir>/token.txt`, then:
 
 ```bash
-TEST_RUNNER_VPS_PANEL_TEST_DIR=<dir> xcodebuild test -project VPSPanel.xcodeproj -scheme VPSPanel \
-  -destination 'platform=iOS Simulator,name=iPhone 17e' -only-testing:VPSPanelUITests
+xcodebuild test -project VPSPanel.xcodeproj -scheme VPSPanel \
+  -destination 'platform=iOS Simulator,name=iPhone 17e' -only-testing:VPSPanelUITests VPS_PANEL_TEST_DIR=<dir>
 ```
 
 Screenshots of each step are written to `<dir>`.

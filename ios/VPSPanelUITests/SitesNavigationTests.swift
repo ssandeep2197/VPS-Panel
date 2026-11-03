@@ -3,10 +3,14 @@ import XCTest
 /// Drives the real app against a local panel server. The token and server come from the scratchpad
 /// so the test never needs the production password.
 final class SitesNavigationTests: XCTestCase {
-    /// Directory holding token.txt (a panel JWT) and receiving screenshots. Pass it with
-    /// TEST_RUNNER_VPS_PANEL_TEST_DIR=/path xcodebuild test ...; the server URL with TEST_RUNNER_VPS_PANEL_TEST_SERVER.
-    private let shots = ProcessInfo.processInfo.environment["VPS_PANEL_TEST_DIR"] ?? NSTemporaryDirectory()
-    private let server = ProcessInfo.processInfo.environment["VPS_PANEL_TEST_SERVER"] ?? "http://127.0.0.1:4601"
+    /// Directory holding token.txt (a panel JWT) and receiving screenshots. Pass it as a build setting:
+    /// xcodebuild test ... VPS_PANEL_TEST_DIR=/path VPS_PANEL_TEST_SERVER=http://127.0.0.1:4601 (see project.yml).
+    private static func env(_ name: String) -> String? {
+        let v = ProcessInfo.processInfo.environment[name] ?? ""
+        return v.isEmpty ? nil : v
+    }
+    private let shots = SitesNavigationTests.env("VPS_PANEL_TEST_DIR") ?? NSTemporaryDirectory()
+    private let server = SitesNavigationTests.env("VPS_PANEL_TEST_SERVER") ?? "http://127.0.0.1:4601"
 
     private func launch() -> XCUIApplication {
         let app = XCUIApplication()
@@ -38,6 +42,36 @@ final class SitesNavigationTests: XCTestCase {
         let detailOpened = app.staticTexts["Why it is not working"].exists || app.staticTexts["Response"].waitForExistence(timeout: 5)
         XCTAssertTrue(detailOpened, "detail screen did not open; nav bars: \(app.navigationBars.allElementsBoundByIndex.map { $0.identifier })")
         XCTAssertFalse(app.navigationBars["Sites"].exists, "still on the Sites list")
+    }
+
+    /// Signs in with a TMS account through the login screen (the stand-in TMS accepts owner@example.com / pw-owner).
+    func testSignsInWithTmsAccount() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-vps_panel_server", server]
+        app.launch()
+        let email = app.textFields["Email"].firstMatch
+        XCTAssertTrue(email.waitForExistence(timeout: 15), "TMS sign-in form not shown; mode probe failed?")
+        sleep(1)
+        email.tap()
+        email.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 30))
+        email.typeText("owner@example.com")
+        let password = app.secureTextFields["Password"].firstMatch
+        password.tap()
+        password.typeText("wrong-password")
+        app.buttons["Sign in"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["Invalid email or password"].waitForExistence(timeout: 10), "wrong password not reported")
+        password.tap()
+        password.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 20))
+        password.typeText("pw-owner")
+        snap(app, "4a-before-sign-in")
+        app.buttons["Sign in"].firstMatch.tap()
+        XCTAssertTrue(app.tabBars.buttons["More"].waitForExistence(timeout: 15), "did not reach the app after TMS sign-in")
+        snap(app, "4-tms-signed-in")
+        app.tabBars.buttons["More"].tap()
+        app.buttons["Settings"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["owner@example.com"].waitForExistence(timeout: 10), "signed-in email not shown in settings")
+        XCTAssertTrue(app.staticTexts["TMS account"].exists)
+        snap(app, "5-settings")
     }
 
     func testOpensSiteDetailFromDashboard() {

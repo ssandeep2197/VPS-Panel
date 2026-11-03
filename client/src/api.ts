@@ -37,6 +37,7 @@ export async function api<T>(path: string, { method = 'GET', body }: RequestOpti
   const token = getToken();
   const res = await fetch(`/api${path}`, {
     method,
+    credentials: 'same-origin',
     headers: {
       ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -63,6 +64,26 @@ export async function api<T>(path: string, { method = 'GET', body }: RequestOpti
 }
 
 const enc = encodeURIComponent;
+
+export interface AuthMode {
+  /** Sign in with a TMS account (single sign-on); the panel's own password stays as a fallback. */
+  tms: boolean;
+  host: string | null;
+  legacy: boolean;
+}
+
+/** Signs in with a TMS account; the server sets the session cookie on success. */
+export async function tmsLogin(email: string, password: string): Promise<{ username: string }> {
+  const res = await fetch('/platform/sso/login', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+  const data = (await res.json().catch(() => ({}))) as { error?: string; code?: string; username?: string };
+  if (!res.ok) throw new ApiError(res.status, data.error || `Sign-in failed (${res.status})`, data.code);
+  return { username: data.username ?? email };
+}
 
 // ---------- Types ----------
 
@@ -449,7 +470,9 @@ export async function apiBlob(path: string): Promise<Blob> {
 export const endpoints = {
   login: (username: string, password: string) =>
     api<{ token: string; username: string }>('/auth/login', { method: 'POST', body: { username, password } }),
-  me: () => api<{ username: string }>('/auth/me'),
+  me: () => api<{ username: string; via: 'token' | 'tms' }>('/auth/me'),
+  authMode: () => api<AuthMode>('/auth/mode'),
+  logout: () => api<{ ok: true }>('/auth/logout', { method: 'POST' }),
   capabilities: () => api<Capabilities>('/capabilities'),
 
   overview: () => api<Overview>('/system/overview'),

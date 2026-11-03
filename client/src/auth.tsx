@@ -1,11 +1,14 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { endpoints, getToken, LOGOUT_EVENT, setToken } from './api';
+import { endpoints, LOGOUT_EVENT, setToken, tmsLogin } from './api';
 
 interface AuthState {
   username: string | null;
   ready: boolean;
+  /** The panel's own admin password. */
   login: (username: string, password: string) => Promise<void>;
+  /** A TMS account (single sign-on). */
+  loginTms: (email: string, password: string) => Promise<void>;
   logout: () => void;
 }
 
@@ -17,10 +20,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    if (!getToken()) {
-      setReady(true);
-      return;
-    }
+    // A stored token or the TMS session cookie: either way the server says who we are
     endpoints
       .me()
       .then((me) => setUsername(me.username))
@@ -29,6 +29,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(() => {
+    void endpoints.logout().catch(() => undefined);
     setToken(null);
     setUsername(null);
     queryClient.clear();
@@ -45,7 +46,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUsername(result.username);
   }, []);
 
-  const value = useMemo(() => ({ username, ready, login, logout }), [username, ready, login, logout]);
+  const loginTms = useCallback(async (email: string, password: string) => {
+    const result = await tmsLogin(email, password);
+    setToken(null);
+    setUsername(result.username);
+  }, []);
+
+  const value = useMemo(
+    () => ({ username, ready, login, loginTms, logout }),
+    [username, ready, login, loginTms, logout],
+  );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

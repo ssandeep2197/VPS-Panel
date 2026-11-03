@@ -2,7 +2,7 @@ import type { Server } from 'http';
 import type { Readable } from 'stream';
 import { WebSocket, WebSocketServer } from 'ws';
 import { z } from 'zod';
-import { verifyToken } from './auth';
+import { authenticate, verifyToken } from './auth';
 import type { ChildProcessWithoutNullStreams } from 'child_process';
 import type { IncomingMessage } from 'http';
 import { auditEvent } from './audit';
@@ -24,21 +24,21 @@ import { errorMessage } from './utils/http';
  *   { token, channel: 'docker-shell', id, cols, rows }  then { type: 'input', data } / { type: 'resize', cols, rows }
  */
 const startSchema = z.discriminatedUnion('channel', [
-  z.object({ token: z.string(), channel: z.literal('metrics') }),
+  z.object({ token: z.string().nullish(), channel: z.literal('metrics') }),
   z.object({
-    token: z.string(),
+    token: z.string().nullish(),
     channel: z.literal('docker-logs'),
     id: z.string(),
     tail: z.number().int().min(0).max(5000).default(200),
   }),
   z.object({
-    token: z.string(),
+    token: z.string().nullish(),
     channel: z.literal('service-logs'),
     name: z.string(),
     tail: z.number().int().min(0).max(5000).default(200),
   }),
   z.object({
-    token: z.string(),
+    token: z.string().nullish(),
     channel: z.literal('pod-logs'),
     namespace: z.string(),
     pod: z.string(),
@@ -46,14 +46,14 @@ const startSchema = z.discriminatedUnion('channel', [
     tail: z.number().int().min(0).max(5000).default(200),
   }),
   z.object({
-    token: z.string(),
+    token: z.string().nullish(),
     channel: z.literal('docker-shell'),
     id: z.string(),
     cols: z.number().int().min(10).max(500).default(80),
     rows: z.number().int().min(4).max(200).default(24),
   }),
   z.object({
-    token: z.string(),
+    token: z.string().nullish(),
     channel: z.literal('ingress-requests'),
     tail: z.number().int().min(0).max(5000).default(500),
   }),
@@ -225,7 +225,8 @@ export function attachWebSocket(server: Server): WebSocketServer {
       void (async () => {
         try {
           const msg = startSchema.parse(JSON.parse(raw.toString()));
-          const user = verifyToken(msg.token);
+          // The browser sends the TMS cookie with the upgrade request; native apps send the token (or the cookie too)
+          const user = msg.token ? verifyToken(msg.token) : await authenticate(undefined, req.headers.cookie);
           const stop = await start(socket, msg, user.username, ip);
           if (closed) stop();
           else cleanup = stop;

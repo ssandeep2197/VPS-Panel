@@ -47,6 +47,21 @@ export const config = {
     saslPassword: process.env.KAFKA_SASL_PASSWORD || '',
   },
 
+  /**
+   * Single sign-on with the TMS platform: the panel is one of TMS's "gated hosts" (service "panel"). The TMS API
+   * verifies the tms_sso cookie on every request and grants access per account (admin portal -> Access).
+   */
+  tms: {
+    sso: bool(process.env.TMS_SSO),
+    /** The hostname TMS knows the panel by (must be listed in the API's SSO_SERVICE_HOSTS as panel=<host>). */
+    host: (process.env.TMS_SSO_HOST || '').trim().toLowerCase(),
+    /** Base URL of the TMS API. Empty = find the running compose container (project/service below) through Docker. */
+    apiUrl: (process.env.TMS_API_URL || '').replace(/\/+$/, ''),
+    apiPort: Number(process.env.TMS_API_PORT) || 4000,
+    composeProject: process.env.TMS_COMPOSE_PROJECT || 'tms',
+    composeService: process.env.TMS_COMPOSE_SERVICE || 'api',
+  },
+
   sites: {
     /** Extra hostnames to monitor that have no ingress in the cluster. */
     extra: list(process.env.SITES),

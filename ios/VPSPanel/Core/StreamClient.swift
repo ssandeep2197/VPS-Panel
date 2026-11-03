@@ -21,6 +21,7 @@ final class StreamClient {
     private var disposed = false
     private var ended = false
     private var generation = 0
+    private static let session = APIClient.makeSession()
 
     init(api: APIClient, request: [String: Any], onOpen: @escaping () -> Void = {}, onMessage: @escaping (Data) -> Void) {
         self.api = api
@@ -47,7 +48,9 @@ final class StreamClient {
         status = .connecting
         generation += 1
         let gen = generation
-        let socket = URLSession.shared.webSocketTask(with: api.webSocketURL())
+        var upgrade = URLRequest(url: api.webSocketURL())
+        api.authorize(&upgrade)
+        let socket = Self.session.webSocketTask(with: upgrade)
         task = socket
         socket.resume()
 

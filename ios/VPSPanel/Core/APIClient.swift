@@ -16,19 +16,34 @@ func enc(_ value: String) -> String {
 
 final class APIClient: @unchecked Sendable {
     var baseURL: URL
+    /** The panel's own admin session. */
     var token: String?
+    /** A TMS single-sign-on session (the tms_sso cookie value). */
+    var cookie: String?
     var onUnauthenticated: (@Sendable () -> Void)?
 
-    private let session: URLSession = {
-        let config = URLSessionConfiguration.default
+    /// Cookies are attached by hand (see `authorize`), never by URLSession, so a stale stored cookie cannot linger.
+    static func makeSession() -> URLSession {
+        let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 30
         config.waitsForConnectivity = false
+        config.httpShouldSetCookies = false
+        config.httpCookieAcceptPolicy = .never
         return URLSession(configuration: config)
-    }()
+    }
 
-    init(baseURL: URL, token: String?) {
+    private let session = APIClient.makeSession()
+
+    init(baseURL: URL, token: String?, cookie: String? = nil) {
         self.baseURL = baseURL
         self.token = token
+        self.cookie = cookie
+    }
+
+    /// Adds whichever credential is held: the bearer token, or the TMS session cookie.
+    func authorize(_ req: inout URLRequest) {
+        if let token { req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        if let cookie { req.setValue("tms_sso=\(cookie)", forHTTPHeaderField: "Cookie") }
     }
 
     func url(forAPI path: String) -> URL {
@@ -60,7 +75,7 @@ final class APIClient: @unchecked Sendable {
         var req = URLRequest(url: url(forAPI: path))
         req.httpMethod = method
         if let timeout { req.timeoutInterval = timeout }
-        if let token { req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        authorize(&req)
         if let body {
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
             req.httpBody = try JSONEncoder().encode(AnyEncodable(body))
@@ -97,6 +112,26 @@ extension APIClient {
     func login(username: String, password: String) async throws -> LoginResponse {
         try await post("/auth/login", body: ["username": username, "password": password])
     }
+    func authMode() async throws -> AuthMode { try await get("/auth/mode") }
+    func logout() async throws { let _: OK = try await post("/auth/logout") }
+
+    /// Signs in with a TMS account through the panel's single-sign-on endpoint; returns the session cookie.
+    func tmsLogin(email: String, password: String) async throws -> TmsLoginResponse {
+        var req = URLRequest(url: URL(string: baseURL.absoluteString.replacingOccurrences(of: "/+$", with: "", options: .regularExpression) + "/platform/sso/login")!)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        req.httpBody = try JSONEncoder().encode(["email": email, "password": password])
+        let (data, response) = try await session.data(for: req)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        if !(200..<300).contains(status) {
+            struct ErrorPayload: Decodable { let error: String?; let code: String? }
+            let payload = try? JSONDecoder().decode(ErrorPayload.self, from: data)
+            throw APIError(status: status, message: payload?.error ?? "Sign-in failed (\(status))", code: payload?.code)
+        }
+        return try JSONDecoder().decode(TmsLoginResponse.self, from: data)
+    }
+
     func capabilities() async throws -> Capabilities { try await get("/capabilities") }
 
     func overview() async throws -> Overview { try await get("/system/overview") }
@@ -157,7 +192,7 @@ extension APIClient {
     /// Raw bytes of a protected resource (used for screenshots, which need the bearer token).
     func bytes(_ path: String) async throws -> Data {
         var req = URLRequest(url: url(forAPI: path))
-        if let token { req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        authorize(&req)
         let (data, response) = try await session.data(for: req)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else { throw APIError(status: status, message: "Request failed (\(status))", code: nil) }

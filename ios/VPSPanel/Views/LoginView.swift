@@ -7,6 +7,8 @@ struct LoginView: View {
     @State private var password = ""
     @State private var busy = false
     @State private var error: String?
+    @State private var method: Session.Method = .tms
+    @State private var modeKnown = false
     @FocusState private var focus: Field?
 
     private enum Field { case server, username, password }
@@ -38,10 +40,17 @@ struct LoginView: View {
                 } footer: {
                     Text("The address of your VPS Panel. Use http://<ip>:4600 only on a private network.")
                 }
+                .onChange(of: server) { _, _ in modeKnown = false }
 
-                Section("Sign in") {
-                    TextField("Username", text: $username)
-                        .textContentType(.username)
+                Section {
+                    Picker("Sign in with", selection: $method) {
+                        Text("TMS account").tag(Session.Method.tms)
+                        Text("Panel password").tag(Session.Method.panel)
+                    }
+                    .pickerStyle(.segmented)
+                    TextField(method == .tms ? "Email" : "Username", text: $username)
+                        .keyboardType(method == .tms ? .emailAddress : .default)
+                        .textContentType(method == .tms ? .emailAddress : .username)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .focused($focus, equals: .username)
@@ -76,7 +85,23 @@ struct LoginView: View {
             .navigationBarTitleDisplayMode(.inline)
             .onAppear {
                 if server.isEmpty { server = session.serverURL }
-                if username.isEmpty { username = session.username ?? "admin" }
+                if username.isEmpty, let u = session.username { username = u }
+                method = session.method
+            }
+            .onChange(of: method) { _, new in
+                // The two sign-ins use different names: never carry "admin" into the email field or an email into the username
+                if new == .tms, !username.contains("@") { username = "" }
+                if new == .panel, username.contains("@") { username = "" }
+            }
+            .task(id: server) {
+                // Ask the server which sign-in it offers; default to the TMS account when it does
+                guard !modeKnown else { return }
+                try? await Task.sleep(for: .milliseconds(400))
+                if let mode = await session.authMode(server: server) {
+                    method = mode.tms ? .tms : .panel
+                    if method == .tms, !username.contains("@") { username = "" }
+                    modeKnown = true
+                }
             }
         }
     }
@@ -88,7 +113,7 @@ struct LoginView: View {
         Task {
             defer { busy = false }
             do {
-                try await session.login(server: server, username: username, password: password)
+                try await session.login(server: server, username: username, password: password, method: method)
             } catch let err as URLError {
                 error = "Cannot reach the server: \(err.localizedDescription)"
             } catch {

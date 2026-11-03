@@ -14,6 +14,18 @@ struct LoginResponse: Decodable {
     let username: String
 }
 
+struct AuthMode: Decodable {
+    let tms: Bool
+    let host: String?
+    let legacy: Bool
+}
+
+struct TmsLoginResponse: Decodable {
+    let username: String
+    let cookie: String
+    let expiresIn: Double
+}
+
 // MARK: - System
 
 struct Disk: Decodable, Identifiable {

@@ -9,6 +9,7 @@ import { kafkaRouter } from './routes/kafka';
 import { kubernetesRouter } from './routes/kubernetes';
 import { servicesRouter } from './routes/services';
 import { sitesRouter } from './routes/sites';
+import { ssoRouter } from './routes/sso';
 import { systemRouter } from './routes/system';
 import { isConfigured as kafkaConfigured } from './services/kafka';
 import { isAvailable as kubernetesAvailable } from './services/kubernetes';
@@ -24,12 +25,16 @@ export function createApp() {
       contentSecurityPolicy: {
         directives: {
           'connect-src': ["'self'", 'ws:', 'wss:'],
+          // The TMS sign-in page (served through /platform/sso) submits a plain form to this host
+          'form-action': ["'self'"],
           // Site screenshots are fetched with the bearer token and shown from blob: URLs
           'img-src': ["'self'", 'data:', 'blob:'],
         },
       },
     }),
   );
+  // TMS single sign-on pages on this host; forwards raw bodies, so it sits before the JSON parser
+  app.use('/platform/sso', ssoRouter);
   app.use(express.json({ limit: '2mb' }));
 
   app.get('/api/health', (_req, res) => {

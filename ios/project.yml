@@ -23,6 +23,10 @@ schemes:
       config: Debug
       targets:
         - VPSPanelUITests
+      # Passed through from the xcodebuild command line: xcodebuild test ... VPS_PANEL_TEST_DIR=/path
+      environmentVariables:
+        VPS_PANEL_TEST_DIR: $(VPS_PANEL_TEST_DIR)
+        VPS_PANEL_TEST_SERVER: $(VPS_PANEL_TEST_SERVER)
 targets:
   VPSPanelUITests:
     type: bundle.ui-testing
