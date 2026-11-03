@@ -77,7 +77,7 @@ export function Layout() {
           ))}
         </nav>
         <div className="sidebar-foot">
-          <span className="muted small user" title={me?.via === 'tms' ? `${me.username} · signed in with TMS` : me?.username}>
+          <span className="muted small user" title={me?.via === 'tms' ? `${me.username} · single sign-on` : me?.username}>
             {me?.name ?? me?.username}
             {me && !me.canWrite && <em className="muted"> (read-only)</em>}
           </span>

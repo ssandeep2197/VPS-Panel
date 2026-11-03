@@ -135,7 +135,7 @@ export const requireWrite: RequestHandler = (req, _res, next) => {
   if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return next();
   if (req.user && canWrite(req.user)) return next();
   if (READ_ONLY_ALLOWED.some((re) => re.test(req.path))) return next();
-  next(new HttpError(403, `Your panel role (${req.user?.role ?? 'none'}) is read-only; an owner can change it in the TMS admin portal (Access)`, 'READ_ONLY'));
+  next(new HttpError(403, `Your panel role (${req.user?.role ?? 'none'}) is read-only; an owner can change it in the ${config.tms.name} admin portal (Access)`, 'READ_ONLY'));
 };
 
 function safeEqual(a: string, b: string): boolean {
@@ -186,7 +186,7 @@ authRouter.post(
     message: { error: 'Too many login attempts. Try again in 15 minutes.' },
   }),
   asyncHandler(async (req, res) => {
-    if (!config.passwordLogin) throw new HttpError(404, 'The panel password login is turned off; sign in with TMS', 'PASSWORD_LOGIN_OFF');
+    if (!config.passwordLogin) throw new HttpError(404, `The panel password login is turned off; sign in with ${config.tms.name}`, 'PASSWORD_LOGIN_OFF');
     const { username, password } = loginSchema.parse(req.body);
     const userOk = safeEqual(username, config.adminUsername);
     const passOk = await bcrypt.compare(password, config.adminPasswordHash);
@@ -209,6 +209,7 @@ authRouter.get('/me', requireAuth, (req, res) => {
 authRouter.get('/mode', (_req, res) => {
   res.json({
     tms: tmsEnabled(),
+    name: config.tms.name,
     legacy: config.passwordLogin,
     issuer: tmsEnabled() ? config.tms.issuer : null,
     loginUrl: tmsEnabled() ? '/auth/login' : null,

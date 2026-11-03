@@ -17,6 +17,8 @@ struct LoginResponse: Decodable {
 struct AuthMode: Decodable {
     /// Sign in with TMS (OpenID Connect) is on.
     let tms: Bool
+    /// How the sign-in is named on the login screen ("Sign in with HW").
+    let name: String?
     /// The panel's own admin password login is on (the fallback for when TMS is down).
     let legacy: Bool
     let issuer: String?

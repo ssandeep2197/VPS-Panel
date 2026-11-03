@@ -102,7 +102,7 @@ struct SettingsView: View {
                 KeyValue("Server", session.serverURL, mono: true)
                 KeyValue("User", session.username)
                 if let name = session.displayName, name != session.username { KeyValue("Name", name) }
-                KeyValue("Signed in with", session.method == .tms ? "TMS account" : "Panel password")
+                KeyValue("Signed in with", session.method == .tms ? "\(session.providerName) account" : "Panel password")
                 if session.method == .tms { KeyValue("Role", session.role ?? "none") }
                 if let caps = session.capabilities {
                     KeyValue("Platform", caps.platform)
@@ -116,7 +116,7 @@ struct SettingsView: View {
             Section {
                 Button("Sign out", role: .destructive) { confirmLogout = true }
             } footer: {
-                Text(session.method == .tms ? "Sessions last 8 hours; signing out also ends the TMS single sign-on in the browser sheet on the next sign-in." : "Sessions expire after 12 hours on the server.")
+                Text(session.method == .tms ? "Sessions last 8 hours; signing out also ends the \(session.providerName) single sign-on in the browser sheet on the next sign-in." : "Sessions expire after 12 hours on the server.")
             }
         }
         .navigationTitle("Settings")

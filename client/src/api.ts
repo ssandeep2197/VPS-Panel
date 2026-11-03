@@ -72,6 +72,8 @@ const enc = encodeURIComponent;
 export interface AuthMode {
   /** Sign in with TMS (OpenID Connect) is on. */
   tms: boolean;
+  /** How the sign-in is named on the login screen ("Sign in with HW"). */
+  name: string;
   /** The panel's own admin password login is on (the fallback for when TMS is down). */
   legacy: boolean;
   issuer: string | null;

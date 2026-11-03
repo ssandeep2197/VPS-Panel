@@ -11,6 +11,7 @@ final class Session {
     private static let methodKey = "vps_panel_method"
     private static let nameKey = "vps_panel_name"
     private static let roleKey = "vps_panel_role"
+    private static let providerKey = "vps_panel_provider"
     /// The app's own URL scheme, where the server hands the session back after a TMS sign-in.
     static let callbackScheme = "vpspanel"
 
@@ -21,6 +22,8 @@ final class Session {
     /// The person's full name (TMS sign-ins) and panel role (owner / admin / viewer).
     private(set) var displayName: String?
     private(set) var role: String?
+    /// How the single sign-on is named by the server ("HW"); shown as "<name> account".
+    private(set) var providerName: String
     private(set) var isAuthenticated: Bool
     /// How the current session was obtained (TMS account or the panel's own password).
     private(set) var method: Method
@@ -45,6 +48,7 @@ final class Session {
         username = UserDefaults.standard.string(forKey: Self.userKey)
         displayName = UserDefaults.standard.string(forKey: Self.nameKey)
         role = UserDefaults.standard.string(forKey: Self.roleKey)
+        providerName = UserDefaults.standard.string(forKey: Self.providerKey) ?? "HW"
         isAuthenticated = token != nil
         method = Method(rawValue: UserDefaults.standard.string(forKey: Self.methodKey) ?? "") ?? .panel
         api = APIClient(baseURL: URL(string: server) ?? URL(string: Self.defaultServer)!, token: token)
@@ -79,8 +83,10 @@ final class Session {
     }
 
     /// Where to send the browser for Sign in with TMS; the browser session comes back through `completeTmsLogin`.
-    func tmsLoginURL(server: String) throws -> URL {
+    func tmsLoginURL(server: String, providerName name: String) throws -> URL {
         guard let url = Self.normalize(server: server) else { throw Self.badServer }
+        providerName = name
+        UserDefaults.standard.set(name, forKey: Self.providerKey)
         api.baseURL = url
         return api.tmsLoginURL()
     }

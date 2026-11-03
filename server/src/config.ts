@@ -53,6 +53,8 @@ export const config = {
    * (admin portal -> Access). Enabled when the issuer, the client secret and the panel's public URL are set.
    */
   tms: {
+    /** How the sign-in is named on the login screens: "Sign in with <name>", "<name> account". */
+    name: (process.env.TMS_NAME || 'HW').trim(),
     /** e.g. https://admin.helloworlds.co.in/platform/oidc (discovery is read from <issuer>/.well-known/openid-configuration) */
     issuer: (process.env.TMS_ISSUER || '').trim().replace(/\/+$/, ''),
     clientId: (process.env.TMS_CLIENT_ID || 'vps-panel').trim(),

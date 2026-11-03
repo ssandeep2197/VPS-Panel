@@ -22,6 +22,7 @@ export function LoginPage() {
 
   // The server's answer decides the default; the toggle link below overrides it
   const tms = useTms ?? mode.data?.tms ?? false;
+  const name = mode.data?.name ?? 'HW';
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -48,13 +49,13 @@ export function LoginPage() {
           <Server size={22} />
           <div>
             <strong>VPS Panel</strong>
-            <span className="muted small">{tms ? 'Sign in with your TMS account' : 'Sign in to manage this server'}</span>
+            <span className="muted small">{tms ? `Sign in with your ${name} account` : 'Sign in to manage this server'}</span>
           </div>
         </div>
         {tms ? (
           <p className="muted small">
-            You will be taken to the TMS sign-in page and back. Access to the panel is granted per account in the TMS admin
-            portal.
+            You will be taken to the {name} sign-in page and back. Access to the panel is granted per account in the {name}{' '}
+            admin portal.
           </p>
         ) : (
           <>
@@ -87,7 +88,7 @@ export function LoginPage() {
           </div>
         )}
         <Button type="submit" variant="primary" loading={busy}>
-          {tms ? 'Sign in with TMS' : 'Sign in'}
+          {tms ? `Sign in with ${name}` : 'Sign in'}
         </Button>
         {mode.data?.tms && mode.data.legacy && (
           <button
@@ -98,7 +99,7 @@ export function LoginPage() {
               setError(null);
             }}
           >
-            {tms ? "Use the panel's own admin password instead" : 'Sign in with your TMS account instead'}
+            {tms ? "Use the panel's own admin password instead" : `Sign in with your ${name} account instead`}
           </button>
         )}
       </form>

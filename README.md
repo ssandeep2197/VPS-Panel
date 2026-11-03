@@ -163,7 +163,7 @@ All settings live in `server/.env`; see `server/.env.example` for the full list.
 | `DOCKER_SOCKET` | Override the Docker socket path |
 | `KUBECTL_BIN` | Path to `kubectl` (default `kubectl`); the Kubernetes page is hidden when it is missing |
 | `PROTECTED_NAMESPACES` | Namespaces whose workloads cannot be scaled from the UI (default `kube-system,ingress-nginx,cert-manager`) |
-| `PUBLIC_URL`, `TMS_ISSUER`, `TMS_CLIENT_ID`, `TMS_CLIENT_SECRET` | Sign in with TMS (see below) |
+| `PUBLIC_URL`, `TMS_ISSUER`, `TMS_CLIENT_ID`, `TMS_CLIENT_SECRET` | Sign in with TMS (see below); `TMS_NAME` is the label on the login screens (default `HW`) |
 | `TMS_ADMIN_ROLES`, `TMS_SESSION_HOURS`, `PASSWORD_LOGIN` | Which TMS roles may change things; session length; keep or drop the panel's own password |
 | `KAFKA_BROKERS` | Comma separated brokers; SASL/SSL options are in `.env.example` |
 | `SITES` | Extra hostnames to check that have no ingress rule in the cluster |
@@ -192,7 +192,7 @@ every 30 minutes, a few per cycle, and stored in `server/data/thumbnails`.
 
 The TMS platform is an OpenID Connect provider (issuer `https://admin.helloworlds.co.in/platform/oidc`) and the
 panel is one of its registered apps, exactly like an app that signs in with Google. People click **Sign in with
-TMS**, type their TMS email and password on the TMS page (silently, within 8 hours of any other TMS sign-in), and
+HW** (the label is `TMS_NAME`), type their TMS email and password on the TMS page (silently, within 8 hours of any other TMS sign-in), and
 come back signed in. Who may open the panel, and as which role, is decided per account in the TMS admin portal
 under **Access**; owners (`PLATFORM_ADMIN_EMAILS`) need no grant.
 

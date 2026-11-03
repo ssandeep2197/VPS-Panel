@@ -57,8 +57,8 @@ let lastFailure = 0;
  */
 export async function client(): Promise<OIDC.Configuration> {
   if (configuration) return configuration;
-  if (!isEnabled()) throw new HttpError(404, 'Sign in with TMS is not enabled on this panel');
-  if (Date.now() - lastFailure < RETRY_MS) throw new HttpError(503, 'TMS sign-in is not reachable right now; try again in a moment', 'TMS_UNAVAILABLE');
+  if (!isEnabled()) throw new HttpError(404, `Sign in with ${config.tms.name} is not enabled on this panel`);
+  if (Date.now() - lastFailure < RETRY_MS) throw new HttpError(503, `${config.tms.name} sign-in is not reachable right now; try again in a moment`, 'TMS_UNAVAILABLE');
   discovering ??= (async () => {
     const lib = await oidc();
     const issuer = new URL(config.tms.issuer);
@@ -74,7 +74,7 @@ export async function client(): Promise<OIDC.Configuration> {
       return c;
     } catch (err) {
       lastFailure = Date.now();
-      throw new HttpError(503, `TMS sign-in is not available: ${errorMessage(err)}`, 'TMS_UNAVAILABLE');
+      throw new HttpError(503, `${config.tms.name} sign-in is not available: ${errorMessage(err)}`, 'TMS_UNAVAILABLE');
     } finally {
       discovering = null;
     }
@@ -120,10 +120,10 @@ export async function finishLogin(callbackUrl: URL, pending: PendingLogin): Prom
       expectedNonce: pending.nonce,
     });
   } catch (err) {
-    throw translate(err, 'Sign-in with TMS failed');
+    throw translate(err, `Sign-in with ${config.tms.name} failed`);
   }
   const claims = tokens.claims();
-  if (!claims) throw new HttpError(502, 'TMS answered without an id token');
+  if (!claims) throw new HttpError(502, `${config.tms.name} answered without an id token`);
   const expiresIn = tokens.expiresIn() ?? 3600;
   const role = typeof claims.role === 'string' ? claims.role : null;
   return {
@@ -150,7 +150,7 @@ export async function recheck(sub: string, accessToken: string): Promise<Recheck
     await lib.fetchUserInfo(c, accessToken, sub);
     return { ok: true };
   } catch (err) {
-    const e = translate(err, 'TMS refused the session');
+    const e = translate(err, `${config.tms.name} refused the session`);
     if (e.status === 401 || e.status === 403) return { ok: false, status: e.status, message: e.message };
     throw e;
   }
@@ -179,11 +179,11 @@ function translate(err: unknown, fallback: string): HttpError {
   const cause = e.cause as { status?: unknown } | undefined;
   const status = e.status ?? (cause && typeof cause.status === 'number' ? cause.status : undefined);
   if (code === 'access_denied' || status === 403) {
-    return new HttpError(403, 'Your account has no access to the VPS panel. An owner can grant it in the TMS admin portal (Access).', 'NO_ACCESS');
+    return new HttpError(403, `Your account has no access to the VPS panel. An owner can grant it in the ${config.tms.name} admin portal (Access).`, 'NO_ACCESS');
   }
   if (code === 'invalid_grant' || status === 401 || e.name === 'AuthorizationResponseError') {
     return new HttpError(401, `${fallback}: ${detail}`, 'UNAUTHENTICATED');
   }
-  if (code === 'invalid_client') return new HttpError(502, `The TMS does not accept this panel's client id or secret: ${detail}`);
+  if (code === 'invalid_client') return new HttpError(502, `${config.tms.name} does not accept this panel's client id or secret: ${detail}`);
   return new HttpError(502, `${fallback}: ${detail}`);
 }

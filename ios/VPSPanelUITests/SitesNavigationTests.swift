@@ -50,7 +50,7 @@ final class SitesNavigationTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments += ["-vps_panel_server", server, "-vps_panel_signed_out"]
         app.launch()
-        let button = app.buttons["Sign in with TMS"].firstMatch
+        let button = app.buttons["Sign in with HW"].firstMatch
         let shown = button.waitForExistence(timeout: 15)
         if !shown { snap(app, "4z-no-button") }
         XCTAssertTrue(shown, "TMS sign-in button not shown; mode probe failed?")
@@ -91,7 +91,7 @@ final class SitesNavigationTests: XCTestCase {
         app.tabBars.buttons["More"].tap()
         app.buttons["Settings"].firstMatch.tap()
         XCTAssertTrue(app.staticTexts["owner@example.com"].waitForExistence(timeout: 10), "signed-in email not shown in settings")
-        XCTAssertTrue(app.staticTexts["TMS account"].exists)
+        XCTAssertTrue(app.staticTexts["HW account"].exists)
         XCTAssertTrue(app.staticTexts["owner"].exists, "role not shown")
         snap(app, "5-settings")
     }

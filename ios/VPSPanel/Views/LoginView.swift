@@ -11,6 +11,7 @@ struct LoginView: View {
     @State private var error: String?
     @State private var method: Session.Method = .tms
     @State private var mode: AuthMode?
+    private var name: String { mode?.name ?? session.providerName }
     @FocusState private var focus: Field?
 
     private enum Field { case server, username, password }
@@ -46,7 +47,7 @@ struct LoginView: View {
                 Section {
                     if mode?.tms ?? true, mode?.legacy ?? true {
                         Picker("Sign in with", selection: $method) {
-                            Text("TMS account").tag(Session.Method.tms)
+                            Text("\(name) account").tag(Session.Method.tms)
                             Text("Panel password").tag(Session.Method.panel)
                         }
                         .pickerStyle(.segmented)
@@ -67,7 +68,7 @@ struct LoginView: View {
                     }
                 } footer: {
                     if method == .tms {
-                        Text("You will be taken to the TMS sign-in page and back. Access to the panel is granted per account in the TMS admin portal.")
+                        Text("You will be taken to the \(name) sign-in page and back. Access to the panel is granted per account in the \(name) admin portal.")
                     }
                 }
 
@@ -83,7 +84,7 @@ struct LoginView: View {
                         HStack {
                             Spacer()
                             if busy { ProgressView().padding(.trailing, 6) }
-                            Text(method == .tms ? "Sign in with TMS" : "Sign in").bold()
+                            Text(method == .tms ? "Sign in with \(name)" : "Sign in").bold()
                             Spacer()
                         }
                     }
@@ -120,7 +121,7 @@ struct LoginView: View {
                     try await session.login(server: server, username: username, password: password)
                 case .tms:
                     // The TMS sign-in page opens in a browser sheet; the server ends it with vpspanel://signed-in?token=…
-                    let start = try session.tmsLoginURL(server: server)
+                    let start = try session.tmsLoginURL(server: server, providerName: name)
                     let callback = try await webAuthenticationSession.authenticate(using: start, callbackURLScheme: Session.callbackScheme)
                     try await session.completeTmsLogin(server: server, callback: callback)
                 }

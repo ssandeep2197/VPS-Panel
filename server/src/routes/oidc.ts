@@ -31,7 +31,7 @@ function safePath(to: unknown): string {
 }
 
 oidcRouter.use((_req, _res, next) => {
-  if (!isEnabled()) return next(new HttpError(404, 'Sign in with TMS is not enabled on this panel'));
+  if (!isEnabled()) return next(new HttpError(404, `Sign in with ${config.tms.name} is not enabled on this panel`));
   next();
 });
 
