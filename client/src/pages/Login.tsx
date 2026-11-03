@@ -12,7 +12,12 @@ export function LoginPage() {
   const [useTms, setUseTms] = useState<boolean | null>(null);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(() => {
+    // The TMS callback reports a refused sign-in as /login?error=...
+    const message = new URLSearchParams(window.location.search).get('error');
+    if (message) window.history.replaceState(null, '', '/');
+    return message;
+  });
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -23,11 +28,15 @@ export function LoginPage() {
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
+    if (tms) {
+      setBusy(true);
+      loginTms();
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      if (tms) await loginTms(username, password);
-      else await login(username, password);
+      await login(username, password);
     } catch (err) {
       setError(errorText(err));
     } finally {
@@ -45,36 +54,45 @@ export function LoginPage() {
             <span className="muted small">{tms ? 'Sign in with your TMS account' : 'Sign in to manage this server'}</span>
           </div>
         </div>
-        <label className="field">
-          <span>{tms ? 'Email' : 'Username'}</span>
-          <input
-            type={tms ? 'email' : 'text'}
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            autoComplete="username"
-            autoFocus
-            required
-          />
-        </label>
-        <label className="field">
-          <span>Password</span>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            autoComplete="current-password"
-            required
-          />
-        </label>
+        {tms ? (
+          <p className="muted small">
+            You will be taken to the TMS sign-in page and back. Access to the panel is granted per account in the TMS admin
+            portal.
+          </p>
+        ) : (
+          <>
+            <label className="field">
+              <span>Username</span>
+              <input
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                autoComplete="username"
+                autoFocus
+                required
+              />
+            </label>
+            <label className="field">
+              <span>Password</span>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
+                required
+              />
+            </label>
+          </>
+        )}
         {error && (
           <div className="notice notice-critical" role="alert">
             {error}
           </div>
         )}
         <Button type="submit" variant="primary" loading={busy}>
-          Sign in
+          {tms ? 'Sign in with TMS' : 'Sign in'}
         </Button>
-        {mode.data?.tms && (
+        {mode.data?.tms && mode.data.legacy && (
           <button
             type="button"
             className="link small muted"

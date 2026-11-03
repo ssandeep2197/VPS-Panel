@@ -39,6 +39,8 @@ export async function api<T>(path: string, { method = 'GET', body }: RequestOpti
     method,
     credentials: 'same-origin',
     headers: {
+      // Marks the request as the panel's own page (cookie sessions refuse state changes without it)
+      'X-Requested-With': 'vps-panel',
       ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
@@ -66,23 +68,23 @@ export async function api<T>(path: string, { method = 'GET', body }: RequestOpti
 const enc = encodeURIComponent;
 
 export interface AuthMode {
-  /** Sign in with a TMS account (single sign-on); the panel's own password stays as a fallback. */
+  /** Sign in with TMS (OpenID Connect) is on. */
   tms: boolean;
-  host: string | null;
+  /** The panel's own admin password login is on (the fallback for when TMS is down). */
   legacy: boolean;
+  issuer: string | null;
+  /** Where the browser goes to start the TMS sign-in. */
+  loginUrl: string | null;
 }
 
-/** Signs in with a TMS account; the server sets the session cookie on success. */
-export async function tmsLogin(email: string, password: string): Promise<{ username: string }> {
-  const res = await fetch('/platform/sso/login', {
-    method: 'POST',
-    credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify({ email, password }),
-  });
-  const data = (await res.json().catch(() => ({}))) as { error?: string; code?: string; username?: string };
-  if (!res.ok) throw new ApiError(res.status, data.error || `Sign-in failed (${res.status})`, data.code);
-  return { username: data.username ?? email };
+export interface Me {
+  username: string;
+  via: 'token' | 'tms';
+  sub: string | null;
+  name: string;
+  role: string | null;
+  canWrite: boolean;
+  expiresAt: string;
 }
 
 // ---------- Types ----------
@@ -470,9 +472,9 @@ export async function apiBlob(path: string): Promise<Blob> {
 export const endpoints = {
   login: (username: string, password: string) =>
     api<{ token: string; username: string }>('/auth/login', { method: 'POST', body: { username, password } }),
-  me: () => api<{ username: string; via: 'token' | 'tms' }>('/auth/me'),
+  me: () => api<Me>('/auth/me'),
   authMode: () => api<AuthMode>('/auth/mode'),
-  logout: () => api<{ ok: true }>('/auth/logout', { method: 'POST' }),
+  logout: () => api<{ ok: true; logoutUrl: string | null }>('/auth/logout', { method: 'POST' }),
   capabilities: () => api<Capabilities>('/capabilities'),
 
   overview: () => api<Overview>('/system/overview'),

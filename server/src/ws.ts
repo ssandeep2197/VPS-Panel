@@ -2,7 +2,7 @@ import type { Server } from 'http';
 import type { Readable } from 'stream';
 import { WebSocket, WebSocketServer } from 'ws';
 import { z } from 'zod';
-import { authenticate, verifyToken } from './auth';
+import { authenticate, canWrite, type AuthUser } from './auth';
 import type { ChildProcessWithoutNullStreams } from 'child_process';
 import type { IncomingMessage } from 'http';
 import { auditEvent } from './audit';
@@ -162,6 +162,18 @@ async function startShell(socket: WebSocket, id: string, cols: number, rows: num
   };
 }
 
+/** Whether a browser's upgrade request comes from the panel's own page (its Origin matches the Host). */
+function sameOrigin(req: IncomingMessage): boolean {
+  const origin = req.headers.origin;
+  if (!origin) return true;
+  try {
+    const host = (config.trustProxy && req.headers['x-forwarded-host']) || req.headers.host;
+    return new URL(origin).host === String(host);
+  } catch {
+    return false;
+  }
+}
+
 /** Same rule as Express "trust proxy": use the forwarded address only when configured to. */
 function clientIp(req: IncomingMessage): string {
   const forwarded = req.headers['x-forwarded-for'];
@@ -174,7 +186,7 @@ function clientIp(req: IncomingMessage): string {
 async function start(
   socket: WebSocket,
   msg: z.infer<typeof startSchema>,
-  user: string,
+  user: AuthUser,
   ip: string,
 ): Promise<Cleanup> {
   switch (msg.channel) {
@@ -197,7 +209,8 @@ async function start(
       return pipeChild(socket, followPodLogs(msg.namespace, msg.pod, msg.container, msg.tail), 'kubectl');
     }
     case 'docker-shell': {
-      auditEvent(user, ip, 'container.shell', msg.id.slice(0, 12), true);
+      if (!canWrite(user)) throw new Error('Your panel role is read-only; a container shell needs an admin role');
+      auditEvent(user.username, ip, 'container.shell', msg.id.slice(0, 12), true);
       return startShell(socket, msg.id, msg.cols, msg.rows);
     }
     case 'ingress-requests': {
@@ -225,9 +238,11 @@ export function attachWebSocket(server: Server): WebSocketServer {
       void (async () => {
         try {
           const msg = startSchema.parse(JSON.parse(raw.toString()));
-          // The browser sends the TMS cookie with the upgrade request; native apps send the token (or the cookie too)
-          const user = msg.token ? verifyToken(msg.token) : await authenticate(undefined, req.headers.cookie);
-          const stop = await start(socket, msg, user.username, ip);
+          // The iPhone app (and the web app after a password login) send the token; a TMS web session sends its
+          // cookie with the upgrade, which then must come from the panel's own origin
+          if (!msg.token && !sameOrigin(req)) throw new Error('Cross-site WebSocket refused');
+          const user = await authenticate(msg.token ? `Bearer ${msg.token}` : undefined, req.headers.cookie);
+          const stop = await start(socket, msg, user, ip);
           if (closed) stop();
           else cleanup = stop;
         } catch (err) {

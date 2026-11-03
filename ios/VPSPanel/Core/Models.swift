@@ -15,15 +15,29 @@ struct LoginResponse: Decodable {
 }
 
 struct AuthMode: Decodable {
+    /// Sign in with TMS (OpenID Connect) is on.
     let tms: Bool
-    let host: String?
+    /// The panel's own admin password login is on (the fallback for when TMS is down).
     let legacy: Bool
+    let issuer: String?
+    /// Where the browser goes to start the TMS sign-in (relative to the server).
+    let loginUrl: String?
 }
 
-struct TmsLoginResponse: Decodable {
+/// Who is signed in, as the server sees it.
+struct Me: Decodable {
     let username: String
-    let cookie: String
-    let expiresIn: Double
+    let via: String
+    let sub: String?
+    let name: String
+    let role: String?
+    let canWrite: Bool
+    let expiresAt: String
+}
+
+struct LogoutResponse: Decodable {
+    let ok: Bool
+    let logoutUrl: String?
 }
 
 // MARK: - System

@@ -1,178 +1,189 @@
-import { createHash } from 'crypto';
-import http from 'http';
-import https from 'https';
+import type * as OIDC from 'openid-client';
 import { config } from '../config';
 import { errorMessage, HttpError } from '../utils/http';
-import { docker } from './docker';
 
 /**
- * The panel as a TMS single-sign-on site. TMS issues a per-host cookie (tms_sso) after a sign-in with a TMS
- * account; this module asks the TMS API whether a cookie is valid for the "panel" service (and whether the
- * account still has the grant) and proxies the API's sign-in pages so they appear on the panel's own hostname.
+ * Sign in with TMS: the TMS platform is an OpenID Connect provider (issuer <ADMIN_URL>/platform/oidc) and the
+ * panel is one of its registered apps. This module is the relying-party side — discovery, the authorization-code
+ * flow with PKCE, token verification and the userinfo re-check — done by openid-client; nothing token-shaped is
+ * hand-rolled here.
  */
 
-export const SSO_COOKIE = 'tms_sso';
-const CHECK_CACHE_MS = 30_000;
-const FAIL_CACHE_MS = 5_000;
-const DISCOVERY_MS = 60_000;
-const TIMEOUT_MS = 10_000;
+export interface TmsIdentity {
+  /** The TMS user id: permanent, even when the email changes. */
+  sub: string;
+  email: string;
+  name: string;
+  /** The role the owner picked for this person in the panel app, or "owner" for the TMS owners. */
+  role: string | null;
+  /** When the person last typed their password (id token auth_time). */
+  signedInAt: Date;
+  /** The TMS access token and when it stops working (used to re-check the grant while it lives). */
+  accessToken: string;
+  accessExpiresAt: Date;
+}
+
+export interface PendingLogin {
+  codeVerifier: string;
+  state: string;
+  nonce: string;
+}
 
 export function isEnabled(): boolean {
-  return config.tms.sso && config.tms.host.length > 0;
+  return Boolean(config.tms.issuer && config.tms.clientSecret && config.publicUrl);
 }
 
-// ---------- Finding the API ----------
+export function redirectUri(): string {
+  return `${config.publicUrl}/auth/callback`;
+}
 
-let discovered: { url: string; at: number } | null = null;
+// openid-client v6 is ESM-only and this server is compiled to CommonJS: load it once through a real dynamic import
+// (tsc would otherwise rewrite import() into require(), which older Node versions refuse for ES modules).
+const loadModule = new Function('return import("openid-client")') as () => Promise<typeof OIDC>;
+let modulePromise: Promise<typeof OIDC> | null = null;
+function oidc(): Promise<typeof OIDC> {
+  modulePromise ??= loadModule();
+  return modulePromise;
+}
 
-/** Base URL of the TMS API: configured, or the compose container's address on its Docker network. */
-export async function apiBase(force = false): Promise<string> {
-  if (config.tms.apiUrl) return config.tms.apiUrl;
-  if (!force && discovered && Date.now() - discovered.at < DISCOVERY_MS) return discovered.url;
-  let containers: Awaited<ReturnType<typeof docker.listContainers>>;
+const RETRY_MS = 15_000;
+let configuration: OIDC.Configuration | null = null;
+let discovering: Promise<OIDC.Configuration> | null = null;
+let lastFailure = 0;
+
+/**
+ * The provider's endpoints and keys, read from the discovery document the first time they are needed and kept.
+ * A failure (the provider not deployed yet, TMS down) is retried on the next sign-in, at most every 15 seconds.
+ */
+export async function client(): Promise<OIDC.Configuration> {
+  if (configuration) return configuration;
+  if (!isEnabled()) throw new HttpError(404, 'Sign in with TMS is not enabled on this panel');
+  if (Date.now() - lastFailure < RETRY_MS) throw new HttpError(503, 'TMS sign-in is not reachable right now; try again in a moment', 'TMS_UNAVAILABLE');
+  discovering ??= (async () => {
+    const lib = await oidc();
+    const issuer = new URL(config.tms.issuer);
+    try {
+      const c = await lib.discovery(
+        issuer,
+        config.tms.clientId,
+        config.tms.clientSecret,
+        lib.ClientSecretPost(config.tms.clientSecret),
+        issuer.protocol === 'http:' ? { execute: [lib.allowInsecureRequests] } : undefined,
+      );
+      configuration = c;
+      return c;
+    } catch (err) {
+      lastFailure = Date.now();
+      throw new HttpError(503, `TMS sign-in is not available: ${errorMessage(err)}`, 'TMS_UNAVAILABLE');
+    } finally {
+      discovering = null;
+    }
+  })();
+  return discovering;
+}
+
+/** Reads the discovery document early so the first sign-in does not wait for it; failures are only logged. */
+export function warmUp(): void {
+  if (!isEnabled()) return;
+  client()
+    .then((c) => console.log(`Sign in with TMS: ${c.serverMetadata().issuer} (client ${config.tms.clientId})`))
+    .catch((err) => console.warn(`Sign in with TMS: ${errorMessage(err)} (will retry at the next sign-in)`));
+}
+
+/** Step 1: where to send the browser, plus what to remember until it comes back. */
+export async function startLogin(): Promise<{ url: string; pending: PendingLogin }> {
+  const lib = await oidc();
+  const c = await client();
+  const codeVerifier = lib.randomPKCECodeVerifier();
+  const state = lib.randomState();
+  const nonce = lib.randomNonce();
+  const url = lib.buildAuthorizationUrl(c, {
+    redirect_uri: redirectUri(),
+    scope: config.tms.scopes,
+    code_challenge: await lib.calculatePKCECodeChallenge(codeVerifier),
+    code_challenge_method: 'S256',
+    state,
+    nonce,
+  });
+  return { url: url.href, pending: { codeVerifier, state, nonce } };
+}
+
+/** Step 2: the browser is back with ?code&state. Exchange it, verify the id token and read who this is. */
+export async function finishLogin(callbackUrl: URL, pending: PendingLogin): Promise<TmsIdentity> {
+  const lib = await oidc();
+  const c = await client();
+  let tokens: Awaited<ReturnType<typeof lib.authorizationCodeGrant>>;
   try {
-    containers = await docker.listContainers({
-      filters: {
-        status: ['running'],
-        label: [
-          `com.docker.compose.project=${config.tms.composeProject}`,
-          `com.docker.compose.service=${config.tms.composeService}`,
-        ],
-      },
+    tokens = await lib.authorizationCodeGrant(c, callbackUrl, {
+      pkceCodeVerifier: pending.codeVerifier,
+      expectedState: pending.state,
+      expectedNonce: pending.nonce,
     });
   } catch (err) {
-    throw new HttpError(503, `Cannot look up the TMS API container: ${errorMessage(err)}`, 'TMS_UNAVAILABLE');
+    throw translate(err, 'Sign-in with TMS failed');
   }
-  for (const c of containers) {
-    const ip = Object.values(c.NetworkSettings?.Networks ?? {})
-      .map((n) => n.IPAddress)
-      .find((a) => a);
-    if (ip) {
-      discovered = { url: `http://${ip}:${config.tms.apiPort}`, at: Date.now() };
-      return discovered.url;
-    }
-  }
-  throw new HttpError(
-    503,
-    `No running "${config.tms.composeService}" container of compose project "${config.tms.composeProject}"; set TMS_API_URL`,
-    'TMS_UNAVAILABLE',
-  );
+  const claims = tokens.claims();
+  if (!claims) throw new HttpError(502, 'TMS answered without an id token');
+  const expiresIn = tokens.expiresIn() ?? 3600;
+  const role = typeof claims.role === 'string' ? claims.role : null;
+  return {
+    sub: claims.sub,
+    email: typeof claims.email === 'string' ? claims.email : '',
+    name: typeof claims.name === 'string' && claims.name ? claims.name : (typeof claims.email === 'string' ? claims.email : claims.sub),
+    role,
+    signedInAt: new Date((typeof claims.auth_time === 'number' ? claims.auth_time : claims.iat ?? Date.now() / 1000) * 1000),
+    accessToken: tokens.access_token,
+    accessExpiresAt: new Date(Date.now() + expiresIn * 1000),
+  };
 }
 
-// ---------- Low level request ----------
+export type Recheck = { ok: true } | { ok: false; status: 401 | 403; message: string };
 
-export interface TmsResponse {
-  status: number;
-  headers: http.IncomingHttpHeaders;
-  body: Buffer;
-}
-
-function send(base: string, method: string, path: string, headers: Record<string, string>, body?: Buffer): Promise<TmsResponse> {
-  return new Promise((resolve, reject) => {
-    const target = new URL(base + path);
-    const lib = target.protocol === 'https:' ? https : http;
-    const req = lib.request(
-      target,
-      {
-        method,
-        timeout: TIMEOUT_MS,
-        headers: {
-          ...headers,
-          // The API decides which gated service this is from the host name (SSO_SERVICE_HOSTS)
-          host: config.tms.host,
-          'x-forwarded-host': config.tms.host,
-          'x-forwarded-proto': 'https',
-          ...(body ? { 'content-length': String(body.length) } : {}),
-        },
-      },
-      (res) => {
-        const chunks: Buffer[] = [];
-        res.on('data', (c: Buffer) => chunks.push(c));
-        res.on('end', () => resolve({ status: res.statusCode ?? 0, headers: res.headers, body: Buffer.concat(chunks) }));
-        res.on('error', reject);
-      },
-    );
-    req.on('timeout', () => req.destroy(new Error('TMS API did not answer in time')));
-    req.on('error', reject);
-    if (body) req.write(body);
-    req.end();
-  });
-}
-
-/** Sends to the API, re-discovering the container once if the cached address no longer answers. */
-export async function request(method: string, path: string, headers: Record<string, string> = {}, body?: Buffer): Promise<TmsResponse> {
+/**
+ * Asks the TMS whether this access token still stands for an account that may use the panel. The TMS re-checks the
+ * grant on every userinfo call, so a removed grant answers 403 while the token lives (one hour).
+ */
+export async function recheck(sub: string, accessToken: string): Promise<Recheck> {
+  const lib = await oidc();
+  const c = await client();
   try {
-    return await send(await apiBase(), method, path, headers, body);
+    await lib.fetchUserInfo(c, accessToken, sub);
+    return { ok: true };
   } catch (err) {
-    const code = (err as NodeJS.ErrnoException).code;
-    if (!config.tms.apiUrl && discovered && code && ['ECONNREFUSED', 'EHOSTUNREACH', 'ENETUNREACH', 'ETIMEDOUT'].includes(code)) {
-      return send(await apiBase(true), method, path, headers, body);
-    }
-    throw err;
+    const e = translate(err, 'TMS refused the session');
+    if (e.status === 401 || e.status === 403) return { ok: false, status: e.status, message: e.message };
+    throw e;
   }
 }
 
-// ---------- Session check ----------
-
-export type SessionCheck = { ok: true; email: string } | { ok: false; status: 401 | 403; message: string };
-
-const checks = new Map<string, { at: number; result: SessionCheck }>();
-
-/** Whether a tms_sso cookie proves a signed-in account that may use the panel. Answers are cached briefly. */
-export async function checkSession(cookie: string): Promise<SessionCheck> {
-  const key = createHash('sha256').update(cookie).digest('hex');
-  const hit = checks.get(key);
-  if (hit && Date.now() - hit.at < (hit.result.ok ? CHECK_CACHE_MS : FAIL_CACHE_MS)) return hit.result;
-  let result: SessionCheck;
+/** Where to send the browser after signing out so the TMS single sign-on cookie ends too. */
+export async function logoutUrl(): Promise<string | null> {
+  if (!isEnabled() || !config.tms.logoutEverywhere) return null;
   try {
-    const res = await request('GET', '/platform/sso/check', { cookie: `${SSO_COOKIE}=${cookie}`, accept: 'application/json' });
-    if (res.status === 200) {
-      const data = JSON.parse(res.body.toString()) as { data?: { email?: string } };
-      const email = data.data?.email;
-      result = email ? { ok: true, email } : { ok: false, status: 401, message: 'TMS answered without an account' };
-    } else {
-      result = { ok: false, status: res.status === 403 ? 403 : 401, message: apiMessage(res) };
-    }
-  } catch (err) {
-    throw new HttpError(503, `TMS is not reachable: ${errorMessage(err)}`, 'TMS_UNAVAILABLE');
+    const lib = await oidc();
+    const c = await client();
+    if (!c.serverMetadata().end_session_endpoint) return null;
+    return lib.buildEndSessionUrl(c, { post_logout_redirect_uri: `${config.publicUrl}/` }).href;
+  } catch {
+    return null;
   }
-  checks.set(key, { at: Date.now(), result });
-  if (checks.size > 500) checks.delete(checks.keys().next().value as string);
-  return result;
 }
 
-/** The API's own error text when it sent JSON; otherwise something sensible for the status. */
-export function apiMessage(res: TmsResponse): string {
-  const type = String(res.headers['content-type'] ?? '');
-  if (type.includes('json')) {
-    try {
-      const data = JSON.parse(res.body.toString()) as { error?: { message?: string }; message?: string };
-      const text = data.error?.message ?? data.message;
-      if (text) return text;
-    } catch {
-      // fall through
-    }
+/** Turns openid-client's errors into the panel's: no grant -> 403, a bad or re-used code -> 401, the rest -> 502. */
+function translate(err: unknown, fallback: string): HttpError {
+  if (err instanceof HttpError) return err;
+  const e = err as { error?: string; error_description?: string; status?: number; message?: string; name?: string; cause?: unknown };
+  const code = e.error ?? '';
+  const detail = e.error_description ?? e.message ?? fallback;
+  // A plain 403 from userinfo (no OAuth error body) surfaces as a ClientError whose cause is the Response
+  const cause = e.cause as { status?: unknown } | undefined;
+  const status = e.status ?? (cause && typeof cause.status === 'number' ? cause.status : undefined);
+  if (code === 'access_denied' || status === 403) {
+    return new HttpError(403, 'Your account has no access to the VPS panel. An owner can grant it in the TMS admin portal (Access).', 'NO_ACCESS');
   }
-  if (res.status === 401) return 'Invalid email or password';
-  if (res.status === 403) return 'Your account has no access to the VPS panel. An owner can grant it in the TMS admin portal (Access).';
-  if (res.status === 429) return 'Too many sign-in attempts. Try again in 15 minutes.';
-  return `TMS answered ${res.status}`;
-}
-
-/** Pulls the tms_sso value out of a Set-Cookie header list. */
-export function sessionCookieFrom(setCookie: string | string[] | undefined): string | null {
-  for (const line of Array.isArray(setCookie) ? setCookie : setCookie ? [setCookie] : []) {
-    const m = new RegExp(`^${SSO_COOKIE}=([^;]*)`).exec(line);
-    if (m) return m[1];
+  if (code === 'invalid_grant' || status === 401 || e.name === 'AuthorizationResponseError') {
+    return new HttpError(401, `${fallback}: ${detail}`, 'UNAUTHENTICATED');
   }
-  return null;
-}
-
-export function parseCookies(header: string | undefined): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const part of (header ?? '').split(';')) {
-    const i = part.indexOf('=');
-    if (i > 0) out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
-  }
-  return out;
+  if (code === 'invalid_client') return new HttpError(502, `The TMS does not accept this panel's client id or secret: ${detail}`);
+  return new HttpError(502, `${fallback}: ${detail}`);
 }

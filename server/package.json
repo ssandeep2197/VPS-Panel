@@ -20,6 +20,7 @@
     "helmet": "^8.0.0",
     "jsonwebtoken": "^9.0.2",
     "kafkajs": "^2.2.4",
+    "openid-client": "^6.8.9",
     "systeminformation": "^5.23.5",
     "ws": "^8.18.0",
     "zod": "^3.23.8"

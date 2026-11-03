@@ -8,13 +8,19 @@ final class Session {
     private static let serverKey = "vps_panel_server"
     private static let userKey = "vps_panel_user"
     private static let tokenKey = "vps_panel_token"
-    private static let cookieKey = "vps_panel_sso"
     private static let methodKey = "vps_panel_method"
+    private static let nameKey = "vps_panel_name"
+    private static let roleKey = "vps_panel_role"
+    /// The app's own URL scheme, where the server hands the session back after a TMS sign-in.
+    static let callbackScheme = "vpspanel"
 
     enum Method: String { case tms, panel }
 
     private(set) var serverURL: String
     private(set) var username: String?
+    /// The person's full name (TMS sign-ins) and panel role (owner / admin / viewer).
+    private(set) var displayName: String?
+    private(set) var role: String?
     private(set) var isAuthenticated: Bool
     /// How the current session was obtained (TMS account or the panel's own password).
     private(set) var method: Method
@@ -29,13 +35,19 @@ final class Session {
         if let injected = ProcessInfo.processInfo.environment["VPS_PANEL_TOKEN"], !injected.isEmpty {
             token = injected
         }
+        // UI tests of the sign-in screen start from a signed-out state whatever an earlier run left behind
+        if ProcessInfo.processInfo.arguments.contains("-vps_panel_signed_out") {
+            token = nil
+            Keychain.write(Self.tokenKey, nil)
+        }
 #endif
-        let cookie = Keychain.read(Self.cookieKey)
         serverURL = server
         username = UserDefaults.standard.string(forKey: Self.userKey)
-        isAuthenticated = token != nil || cookie != nil
-        method = Method(rawValue: UserDefaults.standard.string(forKey: Self.methodKey) ?? "") ?? (cookie != nil ? .tms : .panel)
-        api = APIClient(baseURL: URL(string: server) ?? URL(string: Self.defaultServer)!, token: token, cookie: cookie)
+        displayName = UserDefaults.standard.string(forKey: Self.nameKey)
+        role = UserDefaults.standard.string(forKey: Self.roleKey)
+        isAuthenticated = token != nil
+        method = Method(rawValue: UserDefaults.standard.string(forKey: Self.methodKey) ?? "") ?? .panel
+        api = APIClient(baseURL: URL(string: server) ?? URL(string: Self.defaultServer)!, token: token)
         api.onUnauthenticated = { [weak self] in
             Task { @MainActor in self?.logout() }
         }
@@ -57,33 +69,52 @@ final class Session {
         return try? await probe.authMode()
     }
 
-    func login(server: String, username: String, password: String, method: Method) async throws {
-        guard let url = Self.normalize(server: server) else {
-            throw APIError(status: 0, message: "Enter a valid server address, e.g. https://panel.example.com", code: nil)
-        }
+    /// The panel's own admin password.
+    func login(server: String, username: String, password: String) async throws {
+        guard let url = Self.normalize(server: server) else { throw Self.badServer }
         api.baseURL = url
         api.token = nil
-        api.cookie = nil
-        let name: String
-        switch method {
-        case .tms:
-            let response = try await api.tmsLogin(email: username, password: password)
-            api.cookie = response.cookie
-            Keychain.write(Self.cookieKey, response.cookie)
-            Keychain.write(Self.tokenKey, nil)
-            name = response.username
-        case .panel:
-            let response = try await api.login(username: username, password: password)
-            api.token = response.token
-            Keychain.write(Self.tokenKey, response.token)
-            Keychain.write(Self.cookieKey, nil)
-            name = response.username
+        let response = try await api.login(username: username, password: password)
+        await finishSignIn(server: url, token: response.token, method: .panel)
+    }
+
+    /// Where to send the browser for Sign in with TMS; the browser session comes back through `completeTmsLogin`.
+    func tmsLoginURL(server: String) throws -> URL {
+        guard let url = Self.normalize(server: server) else { throw Self.badServer }
+        api.baseURL = url
+        return api.tmsLoginURL()
+    }
+
+    /// The vpspanel://signed-in?token=… (or ?error=…) URL the server handed back after the TMS sign-in.
+    func completeTmsLogin(server: String, callback: URL) async throws {
+        guard let url = Self.normalize(server: server) else { throw Self.badServer }
+        let items = URLComponents(url: callback, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        if let message = items.first(where: { $0.name == "error" })?.value {
+            throw APIError(status: 401, message: message, code: "NO_ACCESS")
         }
+        guard let token = items.first(where: { $0.name == "token" })?.value, !token.isEmpty else {
+            throw APIError(status: 0, message: "The sign-in did not return a session", code: nil)
+        }
+        api.baseURL = url
+        await finishSignIn(server: url, token: token, method: .tms)
+    }
+
+    private static let badServer = APIError(status: 0, message: "Enter a valid server address, e.g. https://panel.example.com", code: nil)
+
+    private func finishSignIn(server url: URL, token: String, method: Method) async {
+        api.token = token
+        Keychain.write(Self.tokenKey, token)
+        let me = try? await api.me()
+        let name = me?.username ?? username ?? ""
         UserDefaults.standard.set(url.absoluteString, forKey: Self.serverKey)
         UserDefaults.standard.set(name, forKey: Self.userKey)
+        UserDefaults.standard.set(me?.name, forKey: Self.nameKey)
+        UserDefaults.standard.set(me?.role, forKey: Self.roleKey)
         UserDefaults.standard.set(method.rawValue, forKey: Self.methodKey)
         serverURL = url.absoluteString
-        self.username = name
+        username = name
+        displayName = me?.name
+        role = me?.role
         self.method = method
         isAuthenticated = true
         capabilities = nil
@@ -92,11 +123,9 @@ final class Session {
 
     func logout() {
         let client = api
-        Task { try? await client.logout() }
+        Task { _ = try? await client.logout() }
         api.token = nil
-        api.cookie = nil
         Keychain.write(Self.tokenKey, nil)
-        Keychain.write(Self.cookieKey, nil)
         isAuthenticated = false
         capabilities = nil
     }

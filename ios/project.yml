@@ -39,6 +39,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: in.co.helloworlds.vpspanel.uitests
         TEST_TARGET_NAME: VPSPanel
+        GENERATE_INFOPLIST_FILE: YES
         CODE_SIGN_STYLE: Automatic
   VPSPanel:
     type: application
@@ -66,4 +67,8 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         ITSAppUsesNonExemptEncryption: false
+        # Sign in with TMS hands the session back to the app through vpspanel://signed-in
+        CFBundleURLTypes:
+          - CFBundleURLName: in.co.helloworlds.vpspanel.signin
+            CFBundleURLSchemes: [vpspanel]
         LSApplicationCategoryType: public.app-category.developer-tools

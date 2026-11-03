@@ -14,7 +14,7 @@ final class SitesNavigationTests: XCTestCase {
 
     private func launch() -> XCUIApplication {
         let app = XCUIApplication()
-        let token = (try? String(contentsOfFile: "\(shots)/token.txt", encoding: .utf8)) ?? ""
+        let token = ((try? String(contentsOfFile: "\(shots)/token.txt", encoding: .utf8)) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         app.launchEnvironment["VPS_PANEL_TOKEN"] = token
         app.launchArguments += ["-vps_panel_server", server]
         app.launch()
@@ -44,33 +44,55 @@ final class SitesNavigationTests: XCTestCase {
         XCTAssertFalse(app.navigationBars["Sites"].exists, "still on the Sites list")
     }
 
-    /// Signs in with a TMS account through the login screen (the stand-in TMS accepts owner@example.com / pw-owner).
+    /// Signs in with TMS: the login screen opens the TMS sign-in page in a browser sheet (the stand-in provider
+    /// accepts owner@example.com / pw-owner) and the server hands the session back through vpspanel://signed-in.
     func testSignsInWithTmsAccount() {
         let app = XCUIApplication()
-        app.launchArguments += ["-vps_panel_server", server]
+        app.launchArguments += ["-vps_panel_server", server, "-vps_panel_signed_out"]
         app.launch()
-        let email = app.textFields["Email"].firstMatch
-        XCTAssertTrue(email.waitForExistence(timeout: 15), "TMS sign-in form not shown; mode probe failed?")
-        sleep(1)
-        email.tap()
-        email.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 30))
-        email.typeText("owner@example.com")
-        let password = app.secureTextFields["Password"].firstMatch
-        password.tap()
-        password.typeText("wrong-password")
-        app.buttons["Sign in"].firstMatch.tap()
-        XCTAssertTrue(app.staticTexts["Invalid email or password"].waitForExistence(timeout: 10), "wrong password not reported")
-        password.tap()
-        password.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 20))
-        password.typeText("pw-owner")
-        snap(app, "4a-before-sign-in")
-        app.buttons["Sign in"].firstMatch.tap()
-        XCTAssertTrue(app.tabBars.buttons["More"].waitForExistence(timeout: 15), "did not reach the app after TMS sign-in")
+        let button = app.buttons["Sign in with TMS"].firstMatch
+        let shown = button.waitForExistence(timeout: 15)
+        if !shown { snap(app, "4z-no-button") }
+        XCTAssertTrue(shown, "TMS sign-in button not shown; mode probe failed?")
+        snap(app, "4a-login")
+        button.tap()
+        // iOS asks once whether the app may use the server's host to sign in
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let consent = springboard.buttons["Continue"].firstMatch
+        if consent.waitForExistence(timeout: 8) { consent.tap() }
+        let email = app.webViews.textFields.firstMatch
+        let tabs = app.tabBars.buttons["More"]
+        // Within 8 hours of an earlier sign-in the TMS signs in silently (its tms_idp cookie), so either the
+        // sign-in page or the app itself may appear here
+        let deadline = Date().addingTimeInterval(20)
+        while !email.exists && !tabs.exists && Date() < deadline { usleep(300_000) }
+        if email.exists {
+            snap(app, "4b-tms-page")
+            email.tap()
+            email.typeText("owner@example.com")
+            let password = app.webViews.secureTextFields.firstMatch
+            password.tap()
+            // Return submits the form; the keyboard's accessory bar would otherwise cover the page's button
+            password.typeText("wrong-password\n")
+            snap(app, "4c-filled")
+            sleep(2)
+            snap(app, "4d-after-wrong")
+            XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Invalid email or password")).firstMatch.waitForExistence(timeout: 10), "wrong password not reported on the TMS page")
+            let password2 = app.webViews.secureTextFields.firstMatch
+            password2.tap()
+            password2.typeText("pw-owner\n")
+            sleep(2)
+            snap(app, "4e-after-right")
+        } else {
+            snap(app, "4b-silent-sign-in")
+        }
+        XCTAssertTrue(app.tabBars.buttons["More"].waitForExistence(timeout: 20), "did not reach the app after the TMS sign-in")
         snap(app, "4-tms-signed-in")
         app.tabBars.buttons["More"].tap()
         app.buttons["Settings"].firstMatch.tap()
         XCTAssertTrue(app.staticTexts["owner@example.com"].waitForExistence(timeout: 10), "signed-in email not shown in settings")
         XCTAssertTrue(app.staticTexts["TMS account"].exists)
+        XCTAssertTrue(app.staticTexts["owner"].exists, "role not shown")
         snap(app, "5-settings")
     }
 

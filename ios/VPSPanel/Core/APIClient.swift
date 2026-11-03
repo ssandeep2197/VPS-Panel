@@ -16,13 +16,11 @@ func enc(_ value: String) -> String {
 
 final class APIClient: @unchecked Sendable {
     var baseURL: URL
-    /** The panel's own admin session. */
+    /** The panel session token: from the admin password login, or handed back by the server after a TMS sign-in. */
     var token: String?
-    /** A TMS single-sign-on session (the tms_sso cookie value). */
-    var cookie: String?
     var onUnauthenticated: (@Sendable () -> Void)?
 
-    /// Cookies are attached by hand (see `authorize`), never by URLSession, so a stale stored cookie cannot linger.
+    /// Cookies are never used by the app: every request carries the bearer token.
     static func makeSession() -> URLSession {
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 30
@@ -34,16 +32,19 @@ final class APIClient: @unchecked Sendable {
 
     private let session = APIClient.makeSession()
 
-    init(baseURL: URL, token: String?, cookie: String? = nil) {
+    init(baseURL: URL, token: String?) {
         self.baseURL = baseURL
         self.token = token
-        self.cookie = cookie
     }
 
-    /// Adds whichever credential is held: the bearer token, or the TMS session cookie.
     func authorize(_ req: inout URLRequest) {
         if let token { req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
-        if let cookie { req.setValue("tms_sso=\(cookie)", forHTTPHeaderField: "Cookie") }
+    }
+
+    /// The page that starts Sign in with TMS; it ends by opening vpspanel://signed-in?token=… in the app.
+    func tmsLoginURL() -> URL {
+        let base = baseURL.absoluteString.hasSuffix("/") ? String(baseURL.absoluteString.dropLast()) : baseURL.absoluteString
+        return URL(string: base + "/auth/login?client=ios")!
     }
 
     func url(forAPI path: String) -> URL {
@@ -113,24 +114,8 @@ extension APIClient {
         try await post("/auth/login", body: ["username": username, "password": password])
     }
     func authMode() async throws -> AuthMode { try await get("/auth/mode") }
-    func logout() async throws { let _: OK = try await post("/auth/logout") }
-
-    /// Signs in with a TMS account through the panel's single-sign-on endpoint; returns the session cookie.
-    func tmsLogin(email: String, password: String) async throws -> TmsLoginResponse {
-        var req = URLRequest(url: URL(string: baseURL.absoluteString.replacingOccurrences(of: "/+$", with: "", options: .regularExpression) + "/platform/sso/login")!)
-        req.httpMethod = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.setValue("application/json", forHTTPHeaderField: "Accept")
-        req.httpBody = try JSONEncoder().encode(["email": email, "password": password])
-        let (data, response) = try await session.data(for: req)
-        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        if !(200..<300).contains(status) {
-            struct ErrorPayload: Decodable { let error: String?; let code: String? }
-            let payload = try? JSONDecoder().decode(ErrorPayload.self, from: data)
-            throw APIError(status: status, message: payload?.error ?? "Sign-in failed (\(status))", code: payload?.code)
-        }
-        return try JSONDecoder().decode(TmsLoginResponse.self, from: data)
-    }
+    func me() async throws -> Me { try await get("/auth/me") }
+    func logout() async throws -> LogoutResponse { try await post("/auth/logout") }
 
     func capabilities() async throws -> Capabilities { try await get("/capabilities") }
 

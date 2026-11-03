@@ -48,19 +48,27 @@ export const config = {
   },
 
   /**
-   * Single sign-on with the TMS platform: the panel is one of TMS's "gated hosts" (service "panel"). The TMS API
-   * verifies the tms_sso cookie on every request and grants access per account (admin portal -> Access).
+   * Sign in with TMS: the TMS platform is an OpenID Connect provider and the panel is one of its registered apps
+   * (admin portal -> Apps). People sign in on the TMS page; the owner grants access per account with a role
+   * (admin portal -> Access). Enabled when the issuer, the client secret and the panel's public URL are set.
    */
   tms: {
-    sso: bool(process.env.TMS_SSO),
-    /** The hostname TMS knows the panel by (must be listed in the API's SSO_SERVICE_HOSTS as panel=<host>). */
-    host: (process.env.TMS_SSO_HOST || '').trim().toLowerCase(),
-    /** Base URL of the TMS API. Empty = find the running compose container (project/service below) through Docker. */
-    apiUrl: (process.env.TMS_API_URL || '').replace(/\/+$/, ''),
-    apiPort: Number(process.env.TMS_API_PORT) || 4000,
-    composeProject: process.env.TMS_COMPOSE_PROJECT || 'tms',
-    composeService: process.env.TMS_COMPOSE_SERVICE || 'api',
+    /** e.g. https://admin.helloworlds.co.in/platform/oidc (discovery is read from <issuer>/.well-known/openid-configuration) */
+    issuer: (process.env.TMS_ISSUER || '').trim().replace(/\/+$/, ''),
+    clientId: (process.env.TMS_CLIENT_ID || 'vps-panel').trim(),
+    clientSecret: (process.env.TMS_CLIENT_SECRET || '').trim(),
+    scopes: (process.env.TMS_SCOPES || 'openid email profile roles').trim(),
+    /** Roles (from the id token) that may change things; everyone else signed in through TMS is read-only. */
+    adminRoles: list(process.env.TMS_ADMIN_ROLES ?? 'owner,admin'),
+    /** How long the panel's own session lasts after a TMS sign-in. */
+    sessionHours: Number(process.env.TMS_SESSION_HOURS) || 8,
+    /** Also end the TMS single sign-on (its 8-hour cookie) when signing out of the panel. */
+    logoutEverywhere: bool(process.env.TMS_LOGOUT_EVERYWHERE, true),
   },
+  /** The address people open the panel at, e.g. https://panel.example.com; the sign-in redirect is <PUBLIC_URL>/auth/callback. */
+  publicUrl: (process.env.PUBLIC_URL || '').trim().replace(/\/+$/, ''),
+  /** The panel's own admin username/password login. Keep it as the break-glass path when TMS itself is down. */
+  passwordLogin: bool(process.env.PASSWORD_LOGIN, true),
 
   sites: {
     /** Extra hostnames to monitor that have no ingress in the cluster. */

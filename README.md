@@ -163,7 +163,8 @@ All settings live in `server/.env`; see `server/.env.example` for the full list.
 | `DOCKER_SOCKET` | Override the Docker socket path |
 | `KUBECTL_BIN` | Path to `kubectl` (default `kubectl`); the Kubernetes page is hidden when it is missing |
 | `PROTECTED_NAMESPACES` | Namespaces whose workloads cannot be scaled from the UI (default `kube-system,ingress-nginx,cert-manager`) |
-| `TMS_SSO`, `TMS_SSO_HOST`, `TMS_API_URL` | Sign in with TMS accounts (see below) |
+| `PUBLIC_URL`, `TMS_ISSUER`, `TMS_CLIENT_ID`, `TMS_CLIENT_SECRET` | Sign in with TMS (see below) |
+| `TMS_ADMIN_ROLES`, `TMS_SESSION_HOURS`, `PASSWORD_LOGIN` | Which TMS roles may change things; session length; keep or drop the panel's own password |
 | `KAFKA_BROKERS` | Comma separated brokers; SASL/SSL options are in `.env.example` |
 | `SITES` | Extra hostnames to check that have no ingress rule in the cluster |
 | `THUMBNAILS`, `THUMBNAIL_IMAGE` | Screenshots use headless Chromium in a throwaway Docker container (`zenika/alpine-chrome`, pulled on first use); set `THUMBNAILS=false` to disable |
@@ -187,22 +188,31 @@ selector-less services the Docker container on the host bridge). Each failing st
 site's "problems" list, so the page says *why* a site is down, not just that it is. Screenshots are refreshed
 every 30 minutes, a few per cycle, and stored in `server/data/thumbnails`.
 
-## Sign-in with TMS (single sign-on)
+## Sign in with TMS
 
-With `TMS_SSO=true` the panel is one of the TMS platform's *gated hosts* (service `panel`), exactly like the TMS
-developer portal: people sign in with their TMS email and password, TMS sets an 8-hour `tms_sso` cookie for the
-panel's hostname, and the panel asks the TMS API (`GET /platform/sso/check`) on every request whether the cookie is
-still valid and the account still has the grant. Who may use the panel is managed in the TMS admin portal under
-**Access** (owners in `PLATFORM_ADMIN_EMAILS` always may); removing a grant ends access within 30 seconds.
+The TMS platform is an OpenID Connect provider (issuer `https://admin.helloworlds.co.in/platform/oidc`) and the
+panel is one of its registered apps, exactly like an app that signs in with Google. People click **Sign in with
+TMS**, type their TMS email and password on the TMS page (silently, within 8 hours of any other TMS sign-in), and
+come back signed in. Who may open the panel, and as which role, is decided per account in the TMS admin portal
+under **Access**; owners (`PLATFORM_ADMIN_EMAILS`) need no grant.
 
-- `/platform/sso/*` on the panel's host is passed through to the TMS API, so the admin portal's hand-over link
-  (`/platform/sso/consume`) and the TMS sign-in form work on the panel too. The panel's own login screens post JSON
-  to `/platform/sso/login` and get the cookie back; the iPhone app stores it in the Keychain and sends it as a
-  `Cookie` header (also on the WebSocket).
-- The TMS API is found through Docker (the running `api` container of the `tms` compose project), or set
-  `TMS_API_URL`. TMS must list the panel's hostname: `SSO_SERVICE_HOSTS=docs=docs.example.com;panel=panel.example.com`.
-- The panel's own `ADMIN_USERNAME` / `ADMIN_PASSWORD_HASH` login stays available behind "Use the panel's own admin
-  password" as a break-glass path for when TMS itself is down, since the panel is the tool to fix it with.
+- Flow: authorization code with PKCE (`GET /auth/login` → TMS → `GET /auth/callback`), done with
+  [openid-client](https://github.com/panva/openid-client); the discovery document is read at start-up, the id token
+  is verified against the TMS keys, and the identity (`sub`, `email`, `name`, `role`) is read from it. The panel then
+  issues its own session (8 hours, `TMS_SESSION_HOURS`): an HttpOnly cookie for the web app, a bearer token handed to
+  the iPhone app through `vpspanel://signed-in`. The TMS access token is kept server-side (`server/data/sessions.json`)
+  so the grant is re-checked with the TMS about once a minute while it lives; a grant removed in the admin portal ends
+  the session within a minute during that hour, and at the next sign-in afterwards.
+- Roles: `owner` and `admin` may change things; any other role (`viewer`) sees everything but every state-changing
+  request answers 403 `READ_ONLY`, and the container shell is refused. Change the list with `TMS_ADMIN_ROLES`.
+- Sign-out ends the panel session and, unless `TMS_LOGOUT_EVERYWHERE=false`, sends the browser through the TMS
+  logout so the next sign-in asks for the password again.
+- Setup, owner's side: register the app on the admin portal's **Apps** page (id `vps-panel`, redirect URL
+  `https://panel.example.com/auth/callback`, roles `admin, viewer`, server-side), copy the secret it shows once
+  into `TMS_CLIENT_SECRET`, set `PUBLIC_URL` and `TMS_ISSUER`, restart, then grant people on **Access**.
+- The panel's own `ADMIN_USERNAME` / `ADMIN_PASSWORD_HASH` login stays behind "Use the panel's own admin password"
+  as the break-glass path for when TMS itself is down, since the panel is the tool to fix it with
+  (`PASSWORD_LOGIN=false` removes it).
 
 ## Security notes
 

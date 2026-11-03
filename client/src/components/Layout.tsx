@@ -45,7 +45,7 @@ function initialTheme(): Theme {
 }
 
 export function Layout() {
-  const { username, logout } = useAuth();
+  const { me, logout } = useAuth();
   const [theme, setTheme] = useState<Theme>(initialTheme);
   const overview = useQuery({ queryKey: ['overview'], queryFn: endpoints.overview, staleTime: 60_000 });
 
@@ -77,7 +77,10 @@ export function Layout() {
           ))}
         </nav>
         <div className="sidebar-foot">
-          <span className="muted small user">{username}</span>
+          <span className="muted small user" title={me?.via === 'tms' ? `${me.username} · signed in with TMS` : me?.username}>
+            {me?.name ?? me?.username}
+            {me && !me.canWrite && <em className="muted"> (read-only)</em>}
+          </span>
           <Button
             variant="ghost"
             size="sm"

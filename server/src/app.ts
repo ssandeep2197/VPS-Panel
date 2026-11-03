@@ -2,14 +2,14 @@ import express from 'express';
 import fs from 'fs';
 import helmet from 'helmet';
 import path from 'path';
-import { authRouter, requireAuth } from './auth';
+import { authRouter, requireAuth, requireWrite } from './auth';
 import { config } from './config';
 import { dockerRouter } from './routes/docker';
 import { kafkaRouter } from './routes/kafka';
 import { kubernetesRouter } from './routes/kubernetes';
 import { servicesRouter } from './routes/services';
+import { oidcRouter } from './routes/oidc';
 import { sitesRouter } from './routes/sites';
-import { ssoRouter } from './routes/sso';
 import { systemRouter } from './routes/system';
 import { isConfigured as kafkaConfigured } from './services/kafka';
 import { isAvailable as kubernetesAvailable } from './services/kubernetes';
@@ -25,17 +25,16 @@ export function createApp() {
       contentSecurityPolicy: {
         directives: {
           'connect-src': ["'self'", 'ws:', 'wss:'],
-          // The TMS sign-in page (served through /platform/sso) submits a plain form to this host
-          'form-action': ["'self'"],
           // Site screenshots are fetched with the bearer token and shown from blob: URLs
           'img-src': ["'self'", 'data:', 'blob:'],
         },
       },
     }),
   );
-  // TMS single sign-on pages on this host; forwards raw bodies, so it sits before the JSON parser
-  app.use('/platform/sso', ssoRouter);
   app.use(express.json({ limit: '2mb' }));
+
+  // Sign in with TMS (OpenID Connect): the browser round trip lives outside /api
+  app.use('/auth', oidcRouter);
 
   app.get('/api/health', (_req, res) => {
     res.json({ ok: true });
@@ -45,6 +44,7 @@ export function createApp() {
 
   const api = express.Router();
   api.use(requireAuth);
+  api.use(requireWrite);
   api.get(
     '/capabilities',
     asyncHandler(async (_req, res) => {
