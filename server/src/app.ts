@@ -27,6 +27,9 @@ export function createApp() {
           'connect-src': ["'self'", 'ws:', 'wss:'],
           // Site screenshots are fetched with the bearer token and shown from blob: URLs
           'img-src': ["'self'", 'data:', 'blob:'],
+          // A panel reached over plain http (a private network, local testing) must not have its own assets
+          // upgraded to https by the browser
+          ...(config.publicUrl && !config.publicUrl.startsWith('https://') ? { 'upgrade-insecure-requests': null } : {}),
         },
       },
     }),
