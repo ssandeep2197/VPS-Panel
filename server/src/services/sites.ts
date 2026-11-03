@@ -89,6 +89,25 @@ const TLS_TIMEOUT_MS = 8_000;
 const PLACEHOLDER_CN = 'Kubernetes Ingress Controller Fake Certificate';
 const HOST_RE = /^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?)+$/i;
 
+/** Public resolvers: the server's own resolver may have hosts-file or cluster overrides that visitors never see. */
+const publicResolver = new dns.Resolver({ timeout: 4000, tries: 2 });
+publicResolver.setServers(['1.1.1.1', '8.8.8.8']);
+
+async function resolvePublic(host: string): Promise<{ addresses: string[]; error: string | null; viaSystem: boolean }> {
+  try {
+    return { addresses: await publicResolver.resolve4(host), error: null, viaSystem: false };
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code ?? '';
+    if (code === 'ENOTFOUND' || code === 'ENODATA') return { addresses: [], error: code, viaSystem: false };
+    // Public resolvers unreachable (firewall): fall back to the system resolver
+    try {
+      return { addresses: await dns.resolve4(host), error: null, viaSystem: true };
+    } catch (err2) {
+      return { addresses: [], error: (err2 as NodeJS.ErrnoException).code ?? errorMessage(err2), viaSystem: true };
+    }
+  }
+}
+
 const thumbDir = path.join(config.dataDir, 'thumbnails');
 fs.mkdirSync(thumbDir, { recursive: true });
 
@@ -317,10 +336,7 @@ async function checkSite(site: Discovered, ctx: Context, thumbnailAt: string | n
   const notes: string[] = [];
 
   const [dnsResult, tlsResult, httpResult, backends] = await Promise.all([
-    dns.resolve4(site.host).then(
-      (addresses) => ({ addresses, error: null as string | null }),
-      (err: NodeJS.ErrnoException) => ({ addresses: [] as string[], error: err.code ?? err.message }),
-    ),
+    resolvePublic(site.host),
     tlsProbe(site.host),
     httpGet(url).then(
       (r) => ({ ...r, error: null as string | null }),
@@ -340,6 +356,8 @@ async function checkSite(site: Discovered, ctx: Context, thumbnailAt: string | n
   const pointsHere = ctx.publicIp ? dnsResult.addresses.includes(ctx.publicIp) : null;
   if (!dnsResult.addresses.length) {
     problems.push(`DNS: ${site.host} has no A record (${dnsResult.error ?? 'no answer'}). Add an A record pointing to ${ctx.publicIp ?? 'this server'}.`);
+  } else if (pointsHere === false && dnsResult.viaSystem) {
+    notes.push(`Resolves to ${dnsResult.addresses.join(', ')} on this server (local override); public DNS could not be queried.`);
   } else if (pointsHere === false) {
     problems.push(`DNS points to ${dnsResult.addresses.join(', ')}, not to this server (${ctx.publicIp}). Visitors reach a different machine.`);
   }
