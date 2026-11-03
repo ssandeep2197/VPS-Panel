@@ -32,7 +32,7 @@ struct SitesView: View {
                 }
                 Section {
                     ForEach(list) { site in
-                        NavigationLink(value: site) { SiteRow(site: site) }
+                        NavigationLink { SiteDetailView(site: site) } label: { SiteRow(site: site) }
                     }
                 } header: {
                     HStack {
@@ -46,7 +46,6 @@ struct SitesView: View {
         }
         .searchable(text: $search, prompt: "Search sites")
         .navigationTitle("Sites")
-        .navigationDestination(for: SiteCheck.self) { SiteDetailView(site: $0) }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {

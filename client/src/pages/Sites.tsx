@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Camera, ExternalLink, Globe, RefreshCw } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { endpoints, type SiteBackend, type SiteCheck, type SiteStatus } from '../api';
-import { Badge, Button, Card, PageHeader, QueryView, SearchInput, useFeedback, type Tone } from '../components/ui';
+import { Badge, Button, Card, KeyValue, Modal, PageHeader, QueryView, SearchInput, useFeedback, type Tone } from '../components/ui';
 import { errorText, formatAgo, formatDateTime } from '../utils/format';
 
 const STATUS: Record<SiteStatus, { tone: Tone; label: string }> = {
@@ -84,7 +84,99 @@ function responseText(site: SiteCheck): string {
   return `HTTP ${h.status}${ms}`;
 }
 
-function SiteCard({ site }: { site: SiteCheck }) {
+function SiteModal({ site, onClose }: { site: SiteCheck; onClose: () => void }) {
+  return (
+    <Modal title={site.name} onClose={onClose} size="lg">
+      <div className="site-modal">
+        <Thumbnail site={site} />
+        <div className="row" style={{ justifyContent: 'space-between', marginTop: 12 }}>
+          <Badge tone={STATUS[site.status].tone}>{STATUS[site.status].label}</Badge>
+          <a className="site-host mono" href={site.url} target="_blank" rel="noreferrer">
+            Open {site.host} <ExternalLink size={11} />
+          </a>
+        </div>
+        {site.problems.length > 0 && (
+          <>
+            <h3>Why it is not working</h3>
+            <ul className="site-problems">
+              {site.problems.map((p) => (
+                <li key={p}>
+                  <AlertTriangle size={14} />
+                  <span>{p}</span>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+        {site.notes.length > 0 && (
+          <ul className="site-notes">
+            {site.notes.map((n) => (
+              <li key={n}>{n}</li>
+            ))}
+          </ul>
+        )}
+        <h3>Response</h3>
+        <KeyValue
+          items={[
+            ['Status', site.http.status !== null ? `HTTP ${site.http.status}` : (site.http.error ?? 'no response')],
+            ['Time', site.http.latencyMs !== null ? `${site.http.latencyMs} ms` : ''],
+            ['Title', site.http.title ?? ''],
+            ['Final URL', site.http.finalUrl ?? ''],
+            ['Server', site.http.server ?? ''],
+          ]}
+        />
+        <h3>Certificate</h3>
+        <KeyValue
+          items={[
+            ['Issuer', site.tls.placeholder ? 'ingress placeholder' : (site.tls.issuer ?? '')],
+            ['Trusted', site.tls.valid ? 'yes' : (site.tls.error ?? 'no')],
+            ['Expires', site.tls.expires ? formatDateTime(site.tls.expires) : ''],
+            ['Days left', site.tls.daysLeft !== null ? String(site.tls.daysLeft) : ''],
+            ['cert-manager', site.certificate ? (site.certificate.ready ? 'ready' : site.certificate.message || 'not ready') : 'none'],
+          ]}
+        />
+        <h3>Routing</h3>
+        <KeyValue
+          items={[
+            ['DNS', site.dns.addresses.join(', ') || 'no record'],
+            ['Points to this server', site.dns.pointsHere === null ? 'unknown' : site.dns.pointsHere ? 'yes' : 'no'],
+            ['Namespace', site.namespace ?? ''],
+            ['Ingress', site.ingress ?? ''],
+          ]}
+        />
+        {site.backends.map((b) => (
+          <Fragment key={b.service}>
+            <h3>Backend · {b.service}</h3>
+            {b.kind === 'pods' ? (
+              <KeyValue
+                items={[
+                  ['Pods ready', `${b.ready} of ${b.total}`],
+                  ...b.pods.map((p): [string, string] => [p.name, `${p.status}${p.restarts ? ` · ${p.restarts} restarts` : ''} · ${p.image}`]),
+                ]}
+              />
+            ) : b.kind === 'external' ? (
+              <KeyValue
+                items={[
+                  ['Address', b.addresses.join(', ')],
+                  ['Reachable', b.reachable === null ? 'unknown' : b.reachable ? 'yes' : 'no'],
+                  ['Container', b.container ? `${b.container.name} · ${b.container.state} · ${b.container.status}` : 'not found'],
+                  ['Image', b.container?.image ?? ''],
+                ]}
+              />
+            ) : (
+              <p className="muted">Service has no endpoints.</p>
+            )}
+          </Fragment>
+        ))}
+        <p className="muted small">
+          Checked {formatAgo(site.checkedAt)} · screenshot {site.thumbnailAt ? formatAgo(site.thumbnailAt) : 'not taken yet'}
+        </p>
+      </div>
+    </Modal>
+  );
+}
+
+function SiteCard({ site, onOpen }: { site: SiteCheck; onOpen: () => void }) {
   const feedback = useFeedback();
   const queryClient = useQueryClient();
   const capture = useMutation({
@@ -100,10 +192,10 @@ function SiteCard({ site }: { site: SiteCheck }) {
     <article className={`site-card ${site.status === 'down' ? 'site-down' : ''}`}>
       <Thumbnail site={site} />
       <div className="site-body">
-        <div className="site-title">
+        <button type="button" className="site-title" onClick={onOpen} title="Show details">
           <strong title={site.http.title ?? site.name}>{site.name}</strong>
           {site.namespace && <span className="muted small nowrap">{site.namespace}</span>}
-        </div>
+        </button>
         <a className="site-host mono" href={site.url} target="_blank" rel="noreferrer">
           {site.host} <ExternalLink size={11} />
         </a>
@@ -146,9 +238,14 @@ function SiteCard({ site }: { site: SiteCheck }) {
           <span className="muted small">
             {site.thumbnailAt ? `Screenshot ${formatAgo(site.thumbnailAt)}` : 'No screenshot yet'} · checked {formatAgo(site.checkedAt)}
           </span>
-          <Button variant="ghost" size="sm" onClick={() => capture.mutate()} disabled={capture.isPending} title="Take a new screenshot">
-            <Camera size={14} />
-          </Button>
+          <span className="row">
+            <Button variant="ghost" size="sm" onClick={onOpen}>
+              Details
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => capture.mutate()} disabled={capture.isPending} title="Take a new screenshot">
+              <Camera size={14} />
+            </Button>
+          </span>
         </div>
       </div>
     </article>
@@ -159,6 +256,7 @@ function SiteCard({ site }: { site: SiteCheck }) {
 export function SitesPage() {
   const [search, setSearch] = useState('');
   const [problemsOnly, setProblemsOnly] = useState(false);
+  const [selectedHost, setSelectedHost] = useState<string | null>(null);
   const feedback = useFeedback();
   const queryClient = useQueryClient();
   const sites = useQuery({ queryKey: ['sites'], queryFn: endpoints.sites, refetchInterval: 30_000 });
@@ -232,7 +330,7 @@ export function SitesPage() {
                 {list.length ? (
                   <div className="grid sites" style={{ marginBottom: 0 }}>
                     {list.map((s) => (
-                      <SiteCard key={s.host} site={s} />
+                      <SiteCard key={s.host} site={s} onOpen={() => setSelectedHost(s.host)} />
                     ))}
                   </div>
                 ) : (
@@ -243,6 +341,9 @@ export function SitesPage() {
           }}
         </QueryView>
       </Card>
+      {selectedHost && sites.data?.sites.find((s) => s.host === selectedHost) && (
+        <SiteModal site={sites.data.sites.find((s) => s.host === selectedHost)!} onClose={() => setSelectedHost(null)} />
+      )}
     </>
   );
 }

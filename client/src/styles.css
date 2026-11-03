@@ -1252,3 +1252,27 @@ tr.clickable {
   margin-top: auto;
   padding-top: 4px;
 }
+.site-title {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  width: 100%;
+}
+.site-title:hover strong {
+  text-decoration: underline;
+}
+.site-modal h3 {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-2);
+  margin: 18px 0 6px;
+}
+.site-modal .site-thumb {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
