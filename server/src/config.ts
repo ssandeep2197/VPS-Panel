@@ -40,6 +40,12 @@ export const config = {
 
   kafka: {
     brokers: list(process.env.KAFKA_BROKERS),
+    /**
+     * The Docker container running the broker ("tms-kafka-1", or "<compose project>/<service>"). When set, the broker
+     * hostnames in KAFKA_BROKERS (and the one the broker advertises) are connected to at the container's current
+     * address, found through Docker, so a redeploy that moves the container to another network needs no hosts entry.
+     */
+    container: (process.env.KAFKA_CONTAINER || '').trim(),
     clientId: process.env.KAFKA_CLIENT_ID || 'vps-panel',
     ssl: bool(process.env.KAFKA_SSL),
     saslMechanism: (process.env.KAFKA_SASL_MECHANISM || '').toLowerCase(),

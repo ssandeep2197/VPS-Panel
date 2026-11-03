@@ -166,6 +166,7 @@ All settings live in `server/.env`; see `server/.env.example` for the full list.
 | `PUBLIC_URL`, `TMS_ISSUER`, `TMS_CLIENT_ID`, `TMS_CLIENT_SECRET` | Sign in with TMS (see below); `TMS_NAME` is the label on the login screens (default `HW`) |
 | `TMS_ADMIN_ROLES`, `TMS_SESSION_HOURS`, `PASSWORD_LOGIN` | Which TMS roles may change things; session length; keep or drop the panel's own password |
 | `KAFKA_BROKERS` | Comma separated brokers; SASL/SSL options are in `.env.example` |
+| `KAFKA_CONTAINER` | The broker's Docker container (`tms-kafka-1` or `project/service`): broker hostnames are connected to at its current address, so a redeploy that moves it needs no hosts entry |
 | `SITES` | Extra hostnames to check that have no ingress rule in the cluster |
 | `THUMBNAILS`, `THUMBNAIL_IMAGE` | Screenshots use headless Chromium in a throwaway Docker container (`zenika/alpine-chrome`, pulled on first use); set `THUMBNAILS=false` to disable |
 

@@ -1,7 +1,10 @@
 import crypto from 'crypto';
-import { ConfigResourceTypes, Kafka, logLevel, type Admin, type KafkaConfig, type SASLOptions } from 'kafkajs';
+import { ConfigResourceTypes, Kafka, logLevel, type Admin, type ISocketFactoryArgs, type KafkaConfig, type SASLOptions } from 'kafkajs';
+import net from 'net';
+import tls from 'tls';
 import { config } from '../config';
 import { errorMessage, HttpError } from '../utils/http';
+import { docker } from './docker';
 
 const TOPIC_RE = /^[A-Za-z0-9._-]{1,249}$/;
 const GROUP_RE = /^[\x21-\x7e]{1,255}$/;
@@ -23,6 +26,56 @@ function sasl(): SASLOptions | undefined {
   return { mechanism: saslMechanism, username: saslUsername, password: saslPassword } as SASLOptions;
 }
 
+// ---------- Broker in a Docker container ----------
+
+const CONTAINER_CACHE_MS = 30_000;
+let containerAddress: { ip: string; at: number } | null = null;
+
+/** The current address of the broker's container (KAFKA_CONTAINER), looked up through Docker and kept briefly. */
+async function brokerContainerIp(): Promise<string> {
+  if (containerAddress && Date.now() - containerAddress.at < CONTAINER_CACHE_MS) return containerAddress.ip;
+  const ref = config.kafka.container;
+  let networks: Record<string, { IPAddress?: string }> | undefined;
+  if (ref.includes('/')) {
+    const [project, service] = ref.split('/');
+    const found = await docker.listContainers({
+      filters: { status: ['running'], label: [`com.docker.compose.project=${project}`, `com.docker.compose.service=${service}`] },
+    });
+    if (!found.length) throw new Error(`no running container for compose service ${ref}`);
+    networks = found[0].NetworkSettings?.Networks;
+  } else {
+    const info = await docker.getContainer(ref).inspect();
+    if (!info.State?.Running) throw new Error(`container ${ref} is not running`);
+    networks = info.NetworkSettings?.Networks;
+  }
+  const ip = Object.values(networks ?? {})
+    .map((n) => n.IPAddress)
+    .find((a) => a);
+  if (!ip) throw new Error(`container ${ref} has no network address`);
+  containerAddress = { ip, at: Date.now() };
+  return ip;
+}
+
+/**
+ * kafkajs's default socket, except that a broker hostname is connected to at the container's current address when
+ * KAFKA_CONTAINER is set: the broker advertises itself as e.g. kafka:19092, a name only its own Docker network knows.
+ */
+function socketFactory({ host, port, ssl, onConnect }: ISocketFactoryArgs): net.Socket {
+  const keepAlive = (s: net.Socket) => {
+    s.setKeepAlive(true, 60_000);
+    return s;
+  };
+  if (ssl) return keepAlive(tls.connect({ host, port, ...(net.isIP(host) ? {} : { servername: host }), ...ssl }, onConnect));
+  if (!config.kafka.container || net.isIP(host)) return keepAlive(net.connect({ host, port }, onConnect));
+  const socket = keepAlive(new net.Socket());
+  brokerContainerIp()
+    .then((ip) => socket.connect({ host: ip, port }, onConnect))
+    .catch((err: Error) => socket.destroy(new Error(`Kafka container lookup failed: ${err.message}`)));
+  // A refused or unreachable address means the container moved: look it up again next time
+  socket.once('error', () => (containerAddress = null));
+  return socket;
+}
+
 function client(): Kafka {
   if (!isConfigured()) {
     throw new HttpError(503, 'Kafka is not configured. Set KAFKA_BROKERS in server/.env', 'KAFKA_NOT_CONFIGURED');
@@ -38,6 +91,7 @@ function client(): Kafka {
       // Fail fast so the UI reports an unreachable broker instead of hanging
       retry: { retries: 1, initialRetryTime: 200 },
       logLevel: logLevel.NOTHING,
+      socketFactory,
     };
     kafka = new Kafka(options);
   }
