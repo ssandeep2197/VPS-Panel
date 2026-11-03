@@ -8,6 +8,7 @@ settings:
   base:
     SWIFT_VERSION: "5.0"
     MARKETING_VERSION: "1.0"
+    # Overridden per upload by deploy/testflight.sh (git commit count)
     CURRENT_PROJECT_VERSION: "1"
     DEVELOPMENT_TEAM: XXCJ44UPMW
 schemes:
@@ -58,3 +59,7 @@ targets:
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
         UIBackgroundModes: []
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        ITSAppUsesNonExemptEncryption: false
+        LSApplicationCategoryType: public.app-category.developer-tools

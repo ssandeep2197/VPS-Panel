@@ -54,3 +54,18 @@ TEST_RUNNER_VPS_PANEL_TEST_DIR=<dir> xcodebuild test -project VPSPanel.xcodeproj
 ```
 
 Screenshots of each step are written to `<dir>`.
+
+## TestFlight
+
+Requires a paid Apple Developer Program membership (https://developer.apple.com/programs/enroll/, USD 99 a year,
+approval usually takes a day or two). After that, follow the one-time setup at the top of `deploy/testflight.sh`
+(an App Store Connect API key and the app record), then every release is one command:
+
+```bash
+ios/deploy/testflight.sh
+```
+
+It archives a Release build signed for the App Store, uploads it, and the build shows up in TestFlight once Apple
+has processed it. Add yourself (and anyone else) as an internal tester in App Store Connect > TestFlight; they
+install the TestFlight app from the App Store and get every new build with a push notification. TestFlight builds
+last 90 days and are refreshed by uploading again.
