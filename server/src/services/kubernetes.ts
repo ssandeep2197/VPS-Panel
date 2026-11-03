@@ -382,6 +382,17 @@ export async function listIngresses() {
 
 // ---------- Endpoints ----------
 
+interface RawEndpointSlice {
+  metadata: Meta;
+  addressType?: string;
+  endpoints?: Array<{
+    addresses?: string[];
+    conditions?: { ready?: boolean };
+    targetRef?: { kind: string; name: string };
+  }>;
+  ports?: Array<{ name?: string; port?: number }>;
+}
+
 interface RawEndpoints {
   metadata: Meta;
   subsets?: Array<{
@@ -398,22 +409,60 @@ export interface ServiceEndpoints {
   notReady: Array<{ ip: string; pod: string | null }>;
 }
 
-/** Ready and not-ready addresses behind every Service (pods, or static addresses for selector-less services). */
+/**
+ * Ready and not-ready addresses behind every Service, read from EndpointSlices (which exist both for
+ * selector services and for hand-written slices pointing at host addresses). Falls back to the legacy
+ * Endpoints objects on clusters without the discovery API.
+ */
 export async function listEndpoints(): Promise<ServiceEndpoints[]> {
-  const items = await getJson<RawEndpoints>('endpoints');
-  return items.map((e) => {
-    const ready: ServiceEndpoints['ready'] = [];
-    const notReady: ServiceEndpoints['notReady'] = [];
-    for (const subset of e.subsets ?? []) {
-      const ports = subset.ports?.length ? subset.ports : [{ port: 0 }];
-      for (const a of subset.addresses ?? []) {
-        for (const p of ports) ready.push({ ip: a.ip, port: p.port, pod: a.targetRef?.kind === 'Pod' ? a.targetRef.name : null });
-      }
-      for (const a of subset.notReadyAddresses ?? []) {
-        notReady.push({ ip: a.ip, pod: a.targetRef?.kind === 'Pod' ? a.targetRef.name : null });
+  const byService = new Map<string, ServiceEndpoints>();
+  const entry = (namespace: string, name: string): ServiceEndpoints => {
+    const key = `${namespace}/${name}`;
+    let e = byService.get(key);
+    if (!e) {
+      e = { namespace, name, ready: [], notReady: [] };
+      byService.set(key, e);
+    }
+    return e;
+  };
+
+  let slices: RawEndpointSlice[] = [];
+  try {
+    slices = await getJson<RawEndpointSlice>('endpointslices.discovery.k8s.io');
+  } catch {
+    slices = [];
+  }
+  for (const slice of slices) {
+    if (slice.addressType && slice.addressType !== 'IPv4') continue;
+    const service = slice.metadata.labels?.['kubernetes.io/service-name'];
+    if (!service) continue;
+    const e = entry(slice.metadata.namespace ?? 'default', service);
+    const ports = slice.ports?.filter((p) => typeof p.port === 'number').map((p) => p.port as number) ?? [];
+    for (const ep of slice.endpoints ?? []) {
+      const pod = ep.targetRef?.kind === 'Pod' ? ep.targetRef.name : null;
+      // A missing "ready" condition means ready, per the EndpointSlice spec
+      const ready = ep.conditions?.ready !== false;
+      for (const ip of ep.addresses ?? []) {
+        if (ready) for (const port of ports.length ? ports : [0]) e.ready.push({ ip, port, pod });
+        else e.notReady.push({ ip, pod });
       }
     }
-    return { namespace: e.metadata.namespace ?? 'default', name: e.metadata.name, ready, notReady };
+  }
+  if (byService.size) return [...byService.values()];
+
+  const items = await getJson<RawEndpoints>('endpoints');
+  return items.map((ep) => {
+    const e = entry(ep.metadata.namespace ?? 'default', ep.metadata.name);
+    for (const subset of ep.subsets ?? []) {
+      const ports = subset.ports?.length ? subset.ports : [{ port: 0 }];
+      for (const a of subset.addresses ?? []) {
+        for (const p of ports) e.ready.push({ ip: a.ip, port: p.port, pod: a.targetRef?.kind === 'Pod' ? a.targetRef.name : null });
+      }
+      for (const a of subset.notReadyAddresses ?? []) {
+        e.notReady.push({ ip: a.ip, pod: a.targetRef?.kind === 'Pod' ? a.targetRef.name : null });
+      }
+    }
+    return e;
   });
 }
 
