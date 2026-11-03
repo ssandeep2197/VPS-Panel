@@ -41,3 +41,16 @@ network addresses.
 
 - The interactive container terminal (docker-shell channel). Logs are supported.
 - Pulling images from the phone.
+
+## UI tests
+
+`VPSPanelUITests` drives the real app in the simulator against a local panel server, so it never needs the
+production password. Start the server with throwaway credentials (set `ADMIN_PASSWORD_HASH`, `JWT_SECRET`,
+`PORT=4601`, `SITES=...` in the environment), write a JWT signed with that secret to `<dir>/token.txt`, then:
+
+```bash
+TEST_RUNNER_VPS_PANEL_TEST_DIR=<dir> xcodebuild test -project VPSPanel.xcodeproj -scheme VPSPanel \
+  -destination 'platform=iOS Simulator,name=iPhone 17e' -only-testing:VPSPanelUITests
+```
+
+Screenshots of each step are written to `<dir>`.
