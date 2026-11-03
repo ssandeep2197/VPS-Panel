@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { Server } from 'lucide-react';
-import { useEffect, useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { endpoints } from '../api';
 import { useAuth } from '../auth';
 import { Button } from '../components/ui';
@@ -20,11 +20,8 @@ export function LoginPage() {
   });
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    if (useTms === null && mode.data) setUseTms(mode.data.tms);
-  }, [mode.data, useTms]);
-
-  const tms = useTms === true;
+  // The server's answer decides the default; the toggle link below overrides it
+  const tms = useTms ?? mode.data?.tms ?? false;
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();

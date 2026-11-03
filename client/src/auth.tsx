@@ -31,7 +31,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(() => {
-    const viaTms = me?.via === 'tms';
+    if (!me) return;
+    const viaTms = me.via === 'tms';
     setToken(null);
     setMe(null);
     queryClient.clear();

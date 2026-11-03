@@ -58,7 +58,9 @@ export async function api<T>(path: string, { method = 'GET', body }: RequestOpti
     const payload = (data ?? {}) as { error?: string; code?: string };
     if (res.status === 401 && payload.code === 'UNAUTHENTICATED') {
       setToken(null);
-      window.dispatchEvent(new Event(LOGOUT_EVENT));
+      // The start-up "who am I" probe and sign-out itself answer 401 when nobody is signed in; that is not a
+      // session ending, and the sign-out it would trigger clears the query cache under the login page
+      if (path !== '/auth/me' && path !== '/auth/logout') window.dispatchEvent(new Event(LOGOUT_EVENT));
     }
     throw new ApiError(res.status, payload.error || `Request failed (${res.status})`, payload.code);
   }
